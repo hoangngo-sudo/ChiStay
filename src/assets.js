@@ -11,6 +11,7 @@ import assaultIcon from './assets/paper/crime-categories/assault.svg';
 import batteryIcon from './assets/paper/crime-categories/battery.svg';
 import stackMarkerIcon from './assets/icons/stack.svg';
 import addApartmentIcon from './assets/icons/add-apartment.svg?raw';
+import alertIcon from './assets/icons/alert.svg?raw';
 import bookmarkIcon from './assets/icons/bookmark.svg?raw';
 import calendarIcon from './assets/icons/calendar.svg?raw';
 import checkCircleIcon from './assets/icons/check-circle.svg?raw';
@@ -27,6 +28,7 @@ export { apartmentIllustration, stackMarkerIcon };
 // colour of whatever surrounds it instead of needing one per context.
 export const icons = {
   'add-apartment': addApartmentIcon,
+  'alert': alertIcon,
   'bookmark': bookmarkIcon,
   'calendar': calendarIcon,
   'check-circle': checkCircleIcon,

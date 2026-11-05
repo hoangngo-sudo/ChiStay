@@ -37,7 +37,6 @@
   --danger-line: oklch(77.7% 0.057 25.3);
   --danger-wash: oklch(95.9% 0.014 22.8);
   --success: oklch(37.8% 0.008 106.4);
-  --focus: oklch(24.3% 0.008 106.4);
 
   /* "Worth a visit": the reference's info chip. Its blue-300 wash, with the
      blue ramp's 1100 step for the glyph */
@@ -117,9 +116,11 @@ a {
 a:active {
   opacity: 0.75;
 }
+/* No focus outline anywhere. Without this the browser's own ring comes back on
+   buttons, links and inputs. State is shown with the ring on the control, the
+   error halo and the shake instead. */
 :focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: none;
 }
 [hidden] {
   display: none !important;
@@ -379,10 +380,10 @@ a:active {
 }
 .card-building {
   position: absolute;
-  left: 39%;
-  top: 90px;
-  width: 425px;
-  height: 284px;
+  right: -91.5px;
+  bottom: -44px;
+  width: auto;
+  height: 86%;
   object-fit: contain;
   pointer-events: none;
 }
@@ -458,12 +459,76 @@ select {
   font-size: 16px;
   transition: box-shadow 150ms ease;
 }
+
+/* The alert mark sits inside the field at its trailing edge, so it points at the
+   control it belongs to instead of sitting in front of the message. The padding
+   is always reserved, so nothing shifts when the mark appears. */
+.input-with-icon {
+  position: relative;
+}
+.input-with-icon input {
+  padding-right: 40px;
+}
+.input-icon {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  display: none;
+  color: var(--danger);
+  pointer-events: none;
+}
+.input-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.input-with-icon:has(input[aria-invalid="true"]) .input-icon {
+  display: block;
+}
 input:active,
 select:active {
   background-color: var(--surface-hover);
 }
+/* Invalid field: a solid hairline plus a soft halo of the same red, so the error
+   reads as a deliberate ring instead of a recoloured border. The box-shadow
+   already has a 150ms transition on the input, so the halo grows in. */
 .form-panel input[aria-invalid="true"] {
-  box-shadow: 0 0 0 1px var(--danger);
+  box-shadow:
+    0 0 0 1px var(--danger),
+    0 0 0 3px var(--danger-wash);
+}
+
+/* One short shake when the address cannot be found. Transform only, so the
+   field does not reflow, and the travel decays instead of snapping back. */
+@keyframes field-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-6px);
+  }
+  30% {
+    transform: translateX(5px);
+  }
+  45% {
+    transform: translateX(-4px);
+  }
+  60% {
+    transform: translateX(3px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+  90% {
+    transform: translateX(1px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .form-panel input.is-shaking {
+    animation: field-shake 260ms cubic-bezier(0.36, 0.07, 0.19, 0.97);
+  }
 }
 input::placeholder {
   color: var(--muted);
@@ -496,7 +561,10 @@ select option[value=""] {
 }
 .two-fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 144px), 1fr));
+  /* 172px is wider than the longest label ("Housing type (optional)" needs 155px),
+     so a column only appears once the label fits on one line. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 172px), 1fr));
+  align-items: end;
   gap: 12px;
   margin-top: 16px;
 }
@@ -685,7 +753,8 @@ code {
   font-size: 14px;
   font-weight: 600;
 }
-.map-incident-label span {
+.map-incident-label span,
+.map-incident-label time {
   color: rgb(255 255 255 / 0.78);
   font-size: 12px;
   font-weight: 400;
@@ -710,6 +779,10 @@ code {
 .filter-group {
   min-width: 0;
 }
+/* The reset button sits in the same row, so it takes the field height. */
+.filters .button {
+  min-height: 49px;
+}
 .filter-group legend {
   padding: 0;
 }
@@ -731,7 +804,8 @@ fieldset.filter-group {
 }
 .segments {
   display: flex;
-  height: 44px;
+  /* Same height as the option fields in the add apartment form. */
+  height: 49px;
   border-radius: var(--radius);
   box-shadow: var(--ring-raised);
   overflow: hidden;
@@ -746,9 +820,6 @@ fieldset.filter-group {
   font-weight: 400;
   white-space: nowrap;
 }
-.segments button:focus-visible {
-  outline-offset: -3px;
-}
 
 .segments button.selected {
   color: var(--primary);
@@ -757,8 +828,9 @@ fieldset.filter-group {
 }
 
 .category-group select {
-  min-height: 44px;
-  padding: 0 32px 0 11px;
+  /* Matches the option fields in the add apartment form. */
+  min-height: 49px;
+  padding: 0 32px 0 12px;
   font-size: 16px;
 }
 .date-control-wrap {
@@ -771,8 +843,9 @@ fieldset.filter-group {
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  min-height: 44px;
-  padding: 0 11px 0 12px;
+  /* Matches the option fields in the add apartment form. */
+  min-height: 49px;
+  padding: 0 12px;
   border: 0;
   border-radius: var(--radius);
   background: var(--surface);
@@ -784,8 +857,7 @@ fieldset.filter-group {
 }
 
 .date-field[aria-expanded="true"] {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  box-shadow: var(--ring-raised-hover);
 }
 #date-summary {
   min-width: 0;
@@ -1198,8 +1270,11 @@ fieldset.filter-group {
   .pointer-input .toast[hidden],
   .toast.is-expiring[hidden] {
     opacity: 0;
-    transform: translateY(6px);
-    transition-duration: 160ms;
+    transform: translateY(8px);
+    transition:
+      opacity 160ms cubic-bezier(0.4, 0, 1, 1),
+      transform 160ms cubic-bezier(0.4, 0, 1, 1),
+      display 160ms allow-discrete;
   }
   @starting-style {
     .pointer-input .dialog[open] {
@@ -1211,7 +1286,7 @@ fieldset.filter-group {
     }
     .pointer-input .toast:not([hidden]) {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translateY(16px);
     }
   }
 }
@@ -1340,6 +1415,14 @@ fieldset.filter-group {
   .category-group {
     flex-basis: 150px;
   }
+  /* Narrower cards crop too much off the base, so it rests on the card floor
+     instead of bleeding past it, and takes a slightly larger share of the width. */
+  .card-building {
+    right: -19.37%;
+    bottom: -2.5%;
+    width: 90%;
+    height: auto;
+  }
 }
 @media (max-width: 800px) {
   .topbar {
@@ -1389,6 +1472,9 @@ fieldset.filter-group {
     align-items: flex-start;
     flex-direction: column;
   }
+  .shortlist-heading {
+    gap: 6px;
+  }
   .cards {
     grid-template-columns: 1fr;
   }
@@ -1401,13 +1487,6 @@ fieldset.filter-group {
   }
   .rent {
     font-size: 24px;
-  }
-  .card-building {
-    left: auto;
-    right: -60px;
-    top: 120px;
-    width: 300px;
-    height: auto;
   }
   .filters {
     gap: 16px;

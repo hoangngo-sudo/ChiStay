@@ -36,8 +36,10 @@
 
       <main id="main" class="main">
         <section id="screen-overview">
-          <div class="page-heading">
+          <div class="page-heading shortlist-heading">
             <h1>Your apartment shortlist</h1>
+            <!-- Explains the order the cards are shown in -->
+            <span class="sort-label" id="overview-sort" hidden>Worth a visit first</span>
           </div>
           <!-- Saved apartments are added here by main.js -->
           <div class="cards" id="apartment-list"></div>
@@ -63,7 +65,11 @@
 
               <form id="apartment-form">
                 <label for="address">Street address <span class="required">*</span></label>
-                <input id="address" name="address" autocomplete="street-address" placeholder="e.g. 1234 W Taylor St, Chicago" aria-describedby="address-error" required />
+                <div class="input-with-icon">
+                  <input id="address" name="address" autocomplete="street-address" placeholder="e.g. 1234 W Taylor St, Chicago" aria-describedby="address-error" required />
+                  <!-- Marked inside the field when the address cannot be found -->
+                  <span class="input-icon" data-icon="alert" data-size="16" aria-hidden="true"></span>
+                </div>
                 <p id="address-error" class="field-message" role="alert"></p>
 
                 <div class="two-fields">

@@ -405,7 +405,16 @@ export function createMap(container, options = {}) {
       name.textContent = titleCase(selected.category);
       const block = document.createElement("span");
       block.textContent = titleCase(selected.block);
-      node.append(name, block);
+      // The card on the map carries the same three facts as a list row: what
+      // happened, where, and when.
+      const date = document.createElement("time");
+      date.dateTime = selected.date.day;
+      date.textContent = formatDay(selected.date.day, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+      node.append(name, block, date);
       if (!node.classList.contains("is-visible")) {
         node.classList.add("is-visible");
       }

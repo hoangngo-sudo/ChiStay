@@ -168,6 +168,7 @@ function showToast(message) {
 function renderOverview() {
   const list = document.querySelector("#apartment-list");
   const emptyState = document.querySelector("#overview-empty");
+  const sortLabel = document.querySelector("#overview-sort");
 
   list.innerHTML = "";
 
@@ -175,9 +176,82 @@ function renderOverview() {
   list.hidden = !hasApartments;
   emptyState.hidden = hasApartments;
 
-  state.apartments.forEach((apartment, index) => {
-    list.append(apartmentCard(apartment, index));
+  // With one apartment there is no order to explain. When nothing is marked
+  // worth a visit, rent is the only thing ordering the list, so say that.
+  const hasWorthAVisit = state.apartments.some((apartment) => {
+    return decisionRank(apartment) === 0;
   });
+  sortLabel.textContent = hasWorthAVisit ? "Worth a visit first" : "Cheapest first";
+  sortLabel.hidden = state.apartments.length < 2;
+
+  orderForShortlist(state.apartments).forEach((entry) => {
+    list.append(apartmentCard(entry.apartment, entry.index));
+  });
+}
+
+// How the shortlist is ordered
+//
+// Apartments marked worth a visit come first, so the places the user already
+// decided to see are the ones they scan first. Inside each half the cheapest
+// rent comes first. Rent is optional, so an apartment without one is not
+// treated as free: it is placed last inside its half.
+function orderForShortlist(apartments) {
+  // Each entry keeps the position the apartment was saved at: the card's
+  // buttons use that position to find the apartment again, and it also breaks
+  // ties between two apartments with the same rent.
+  const entries = [];
+
+  apartments.forEach((apartment, index) => {
+    entries.push({
+      apartment,
+      index,
+      rent: rentValue(apartment.rent),
+    });
+  });
+
+  entries.sort((first, second) => {
+    // 1. Worth a visit before still deciding.
+    const firstDecision = decisionRank(first.apartment);
+    const secondDecision = decisionRank(second.apartment);
+    if (firstDecision !== secondDecision) {
+      return firstDecision - secondDecision;
+    }
+
+    // 2. Cheapest rent first, with an unknown rent after the known ones.
+    const firstRent = first.rent;
+    const secondRent = second.rent;
+    if (firstRent === null && secondRent !== null) {
+      return 1;
+    }
+    if (firstRent !== null && secondRent === null) {
+      return -1;
+    }
+    if (firstRent !== null && secondRent !== null && firstRent !== secondRent) {
+      return firstRent - secondRent;
+    }
+
+    // 3. Same decision and same rent: keep the order they were saved in.
+    return first.index - second.index;
+  });
+
+  return entries;
+}
+
+// 0 for an apartment marked worth a visit, 1 for one still deciding.
+function decisionRank(apartment) {
+  return apartment.decision === "worth" ? 0 : 1;
+}
+
+// Number("") is 0, so a missing rent becomes null instead of a price of $0.
+function rentValue(rent) {
+  if (!rent) {
+    return null;
+  }
+  const value = Number(rent);
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return value;
 }
 
 // Copies the <template id="apartment-card-template"> and fills it in.
@@ -229,7 +303,25 @@ function fillVerifyForm() {
   document.querySelector("#address").removeAttribute("aria-invalid");
   document.querySelector("#rent").value = apartment.rent || "";
   document.querySelector("#housing-type").value = apartment.housingType || "";
-  document.querySelector("#address-error").textContent = "";
+  setAddressError("");
+}
+
+// The alert mark lives inside the field, so this only writes the message. It is
+// the single writer of #address-error.
+function setAddressError(message) {
+  document.querySelector("#address-error").textContent = message || "";
+}
+
+// A failed address search shakes the field once. The class comes off on a timer
+// that outlasts the animation, so a later failure can play it again.
+let shakeTimer;
+
+function shakeField(field) {
+  field.classList.add("is-shaking");
+  clearTimeout(shakeTimer);
+  shakeTimer = setTimeout(() => {
+    field.classList.remove("is-shaking");
+  }, 400);
 }
 
 // Mapbox returns "1234 West Roosevelt Road, Chicago, Illinois 60608, United
@@ -311,12 +403,11 @@ async function searchAddress(apartment) {
 
   const button = document.querySelector("#find-address");
   const address = document.querySelector("#address");
-  const error = document.querySelector("#address-error");
   const buttonMarkup = button.innerHTML;
 
   button.disabled = true;
   button.textContent = "Finding address...";
-  error.textContent = "";
+  setAddressError("");
   address.removeAttribute("aria-invalid");
 
   try {
@@ -327,8 +418,9 @@ async function searchAddress(apartment) {
 
     if (matches.length === 0) {
       address.setAttribute("aria-invalid", "true");
-      error.textContent = "No Chicago address found. Check the street address and try again.";
+      setAddressError("No Chicago address found. Check the street address and try again.");
       address.focus();
+      shakeField(address);
       return;
     }
 
@@ -339,9 +431,10 @@ async function searchAddress(apartment) {
     startMap();
   } catch (problem) {
     if (!controller.signal.aborted) {
-      error.textContent = problem instanceof TypeError
+      const message = problem instanceof TypeError
         ? "Unable to search for the address. Check your connection and try again."
         : problem.message;
+      setAddressError(message);
     }
   } finally {
     if (addressSearchController === controller) {
@@ -822,6 +915,9 @@ function startMap() {
 
 // Dialogs
 let pendingDeleteIndex = -1;
+// Where the card sat in the list, so focus can move to the card that takes its
+// place after the list is ordered again.
+let pendingDeletePosition = -1;
 
 function openSaveDialog() {
   if (!state.apartment) {
@@ -837,13 +933,14 @@ function openSaveDialog() {
   document.querySelector("#save-dialog").showModal();
 }
 
-function openDeleteDialog(index) {
+function openDeleteDialog(index, position) {
   const apartment = state.apartments[index];
   if (!apartment) {
     return;
   }
 
   pendingDeleteIndex = index;
+  pendingDeletePosition = position;
   document.querySelector("#delete-dialog-address").textContent = apartment.address;
   document.querySelector("#delete-dialog").showModal();
 }
@@ -970,7 +1067,11 @@ document.addEventListener("click", async (event) => {
   }
 
   if (action === "delete-apartment") {
-    openDeleteDialog(Number(button.dataset.index));
+    // The card's position in the list and its position in state.apartments are
+    // not the same number: the list is ordered, the saved array is not.
+    const card = button.closest(".apartment-card");
+    const cards = Array.from(document.querySelectorAll(".apartment-card"));
+    openDeleteDialog(Number(button.dataset.index), cards.indexOf(card));
     return;
   }
 
@@ -1028,11 +1129,12 @@ function saveApartment(decision) {
 }
 
 function deleteApartment() {
-  const deletedIndex = pendingDeleteIndex;
+  const deletedPosition = pendingDeletePosition;
   const previous = [...state.apartments];
 
   state.apartments.splice(pendingDeleteIndex, 1);
   pendingDeleteIndex = -1;
+  pendingDeletePosition = -1;
   state.toast = "";
 
   if (!persistApartments()) {
@@ -1044,7 +1146,7 @@ function deleteApartment() {
   showScreen("overview");
 
   const apartmentButtons = document.querySelectorAll('.apartment-card [data-action="open-apartment"]');
-  const nextApartment = apartmentButtons[Math.min(deletedIndex, apartmentButtons.length - 1)];
+  const nextApartment = apartmentButtons[Math.min(deletedPosition, apartmentButtons.length - 1)];
   const emptyAction = document.querySelector('#overview-empty [data-action="add"]');
   (nextApartment || emptyAction).focus();
 }
@@ -1099,7 +1201,7 @@ document.addEventListener("input", (event) => {
   }
   addressSearchController?.abort();
   event.target.removeAttribute("aria-invalid");
-  document.querySelector("#address-error").textContent = "";
+  setAddressError("");
   if (!state.match && state.matches.length === 0) {
     return;
   }
