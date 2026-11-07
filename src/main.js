@@ -25,26 +25,6 @@ const screens = {
 const navOverview = document.querySelector("#nav-overview");
 const navAdd = document.querySelector("#nav-add");
 
-document.querySelector(".radius-group .segments").addEventListener("pointerdown", (event) => {
-  const button = event.target.closest('[data-action="radius"]');
-  if (!button || event.button !== 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-  const bounds = button.getBoundingClientRect();
-  const size = Math.hypot(bounds.width, bounds.height) * 2;
-  const ripple = document.createElement("span");
-  ripple.className = "radius-ripple";
-  ripple.style.width = `${size}px`;
-  ripple.style.height = `${size}px`;
-  ripple.style.left = `${event.clientX - bounds.left - size / 2}px`;
-  ripple.style.top = `${event.clientY - bounds.top - size / 2}px`;
-  button.append(ripple);
-  const animation = ripple.animate(
-    [{ transform: "scale(0)", opacity: 0.15 }, { transform: "scale(1)", opacity: 0 }],
-    { duration: 450, easing: "ease-out" },
-  );
-  animation.finished.then(() => ripple.remove(), () => ripple.remove());
-});
-
 const toast = document.querySelector("#toast");
 const toastMessage = document.querySelector("#toast-message");
 let toastTimer;
@@ -915,6 +895,9 @@ function startMap() {
     center: state.match,
     address: state.apartment ? state.apartment.address : "",
     radius: state.filters ? state.filters.radius : undefined,
+    onUpdating: isVerify ? undefined : (updating) => {
+      document.querySelector("#map-update-status").hidden = !updating;
+    },
     onSelect: (id) => {
       state.selectedId = id;
       updateRecords();
@@ -1029,7 +1012,9 @@ document.addEventListener("click", async (event) => {
   }
 
   if (action === "radius") {
+    if (state.filters.radius === Number(button.dataset.radius)) return;
     state.filters.radius = Number(button.dataset.radius);
+    state.map?.beginUpdate();
     fillFilters();
     updateRecords();
     return;

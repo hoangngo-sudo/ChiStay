@@ -212,6 +212,7 @@
           <div class="explore-layout">
             <section class="map-frame explore-map" aria-label="Nearby incidents map">
               <div id="explore-map" class="map"></div>
+              <div class="map-update-status" id="map-update-status" role="status" hidden>Updating map</div>
             </section>
 
             <!-- Records panel
@@ -305,7 +306,7 @@
 
     <!-- Toast message (hidden until an apartment is saved) -->
     <div class="toast" id="toast" role="status" aria-live="polite" hidden>
-      <span class="local-icon" data-icon="check-circle" data-size="24" aria-hidden="true"></span>
+      <span class="local-icon" data-icon="saved" data-size="24" aria-hidden="true"></span>
       <span id="toast-message"></span>
     </div>
 

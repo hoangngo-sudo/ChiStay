@@ -873,14 +873,24 @@ fieldset.filter-group {
   background: var(--primary-wash);
 }
 
-.radius-group .segments button {
-  position: relative;
-  overflow: hidden;
+.radius-group .segments button:active {
+  background: var(--surface-pressed);
 }
-.radius-ripple {
+.radius-group .segments button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+.map-update-status {
   position: absolute;
-  border-radius: 50%;
-  background: var(--primary);
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--ring-raised);
+  color: var(--ink);
+  font-size: 12px;
   pointer-events: none;
 }
 
@@ -928,15 +938,15 @@ fieldset.filter-group {
 }
 .date-panel {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 6px);
   left: 0;
   z-index: var(--z-popover);
   width: 332px;
-  padding: 10px 12px 14px;
+  padding: 4px;
   background: var(--surface);
   border: 0;
-  border-radius: 10px;
-  box-shadow: var(--ring-raised), var(--shadow-popover);
+  border-radius: var(--radius);
+  box-shadow: var(--ring-raised-hover);
 }
 .date-panel-head {
   display: flex;
@@ -1153,11 +1163,9 @@ fieldset.filter-group {
   border-radius: 50%;
   color: var(--ink);
   background: var(--incident);
-  box-shadow: 0 0 0 1.5px var(--incident-line);
 }
 .crime-icon.selected {
   background: var(--ink);
-  box-shadow: 0 0 0 1.5px var(--ink);
   color: var(--surface);
 }
 .crime-icon.selected .crime-icon-image {

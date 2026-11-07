@@ -13,7 +13,6 @@ const CAMPUS = [-87.6505, 41.8719];
 const INK = "#21201c";
 const PRIMARY = "#21201c";
 const INCIDENT = "#f2c94c";
-const INCIDENT_LINE = "#765900";
 
 export async function findAddress(address, signal) {
   if (!mapboxToken.startsWith("pk.")) {
@@ -80,6 +79,21 @@ export function createMap(container, options = {}) {
   };
   const markerImages = new Map();
   let mapDestroyed = false;
+  let updating = false;
+  let updateApplied = false;
+
+  map.on("render", () => {
+    if (updating && updateApplied && map.isSourceLoaded("radius") && map.isSourceLoaded("incidents") && map.isSourceLoaded("selected-incident")) {
+      updating = false;
+      options.onUpdating?.(false);
+    }
+  });
+  map.on("error", () => {
+    if (updating) {
+      updating = false;
+      options.onUpdating?.(false);
+    }
+  });
 
   const loadMarkerImages = async () => {
     const categoryEntries = Object.entries(incidentIcons);
@@ -385,6 +399,7 @@ export function createMap(container, options = {}) {
           ]
         : [],
     });
+    updateApplied = true;
     if (selected) {
       if (!incidentLabel) {
         const element = document.createElement("div");
@@ -460,8 +475,6 @@ export function createMap(container, options = {}) {
       filter: ["has", "point_count"],
       paint: {
         "circle-color": INCIDENT,
-        "circle-stroke-color": INCIDENT_LINE,
-        "circle-stroke-width": 1.5,
         "circle-radius": [
           "step",
           ["get", "point_count"],
@@ -493,10 +506,8 @@ export function createMap(container, options = {}) {
       filter: ["!", ["has", "point_count"]],
       paint: {
         "circle-radius": 16,
-        // Yellow disc behind a dark glyph, with the panel badge's outline.
+        // Yellow disc behind a dark glyph.
         "circle-color": INCIDENT,
-        "circle-stroke-color": INCIDENT_LINE,
-        "circle-stroke-width": 1.5,
       },
     });
     map.addLayer({
@@ -612,9 +623,15 @@ export function createMap(container, options = {}) {
   });
   return {
     update,
+    beginUpdate: () => {
+      updating = true;
+      updateApplied = false;
+      options.onUpdating?.(true);
+    },
     setWaterColor,
     destroy: () => {
       mapDestroyed = true;
+      if (updating) options.onUpdating?.(false);
       map.remove();
     },
     resize: () => map.resize(),
