@@ -460,13 +460,13 @@ select {
   transition: box-shadow 150ms ease;
 }
 
-/* The alert mark sits inside the field at its trailing edge, so it points at the
-   control it belongs to instead of sitting in front of the message. The padding
-   is always reserved, so nothing shifts when the mark appears. */
 .input-with-icon {
   position: relative;
 }
-.input-with-icon input {
+.input-with-icon input:not(:focus) {
+  text-overflow: ellipsis;
+}
+.input-with-icon input[aria-invalid="true"] {
   padding-right: 40px;
 }
 .input-icon {
@@ -558,6 +558,53 @@ select {
 select:invalid,
 select option[value=""] {
   color: var(--muted);
+}
+@supports (appearance: base-select) {
+  #housing-type, #category,
+  #housing-type::picker(select), #category::picker(select) {
+    appearance: base-select;
+  }
+  #housing-type, #category {
+    align-items: center;
+    padding-right: 34px;
+  }
+  #housing-type::picker-icon, #category::picker-icon {
+    display: none;
+  }
+  #housing-type::picker(select), #category::picker(select) {
+    border: 0;
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--ring-raised-hover);
+    padding: 4px;
+    margin-top: 6px;
+  }
+  #housing-type option, #category option {
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    gap: 8px;
+  }
+  #housing-type option::checkmark, #category option::checkmark {
+    content: "";
+    order: 1;
+    margin-left: auto;
+    width: 18px;
+    height: 18px;
+    background: var(--ink);
+    mask: url("./assets/icons/check-circle.svg") center / contain no-repeat;
+  }
+  #housing-type option:checked, #category option:checked {
+    background: var(--surface-hover);
+  }
+  #housing-type option:focus-visible, #category option:focus-visible {
+    background: var(--surface-hover);
+  }
+  @media (hover: hover) {
+    #housing-type option:hover, #category option:hover {
+      background: var(--surface-hover);
+    }
+  }
 }
 .two-fields {
   display: grid;
@@ -824,7 +871,17 @@ fieldset.filter-group {
 .segments button.selected {
   color: var(--primary);
   background: var(--primary-wash);
-  box-shadow: inset 0 -3px var(--primary);
+}
+
+.radius-group .segments button {
+  position: relative;
+  overflow: hidden;
+}
+.radius-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--primary);
+  pointer-events: none;
 }
 
 .category-group select {

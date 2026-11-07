@@ -25,6 +25,26 @@ const screens = {
 const navOverview = document.querySelector("#nav-overview");
 const navAdd = document.querySelector("#nav-add");
 
+document.querySelector(".radius-group .segments").addEventListener("pointerdown", (event) => {
+  const button = event.target.closest('[data-action="radius"]');
+  if (!button || event.button !== 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const bounds = button.getBoundingClientRect();
+  const size = Math.hypot(bounds.width, bounds.height) * 2;
+  const ripple = document.createElement("span");
+  ripple.className = "radius-ripple";
+  ripple.style.width = `${size}px`;
+  ripple.style.height = `${size}px`;
+  ripple.style.left = `${event.clientX - bounds.left - size / 2}px`;
+  ripple.style.top = `${event.clientY - bounds.top - size / 2}px`;
+  button.append(ripple);
+  const animation = ripple.animate(
+    [{ transform: "scale(0)", opacity: 0.15 }, { transform: "scale(1)", opacity: 0 }],
+    { duration: 450, easing: "ease-out" },
+  );
+  animation.finished.then(() => ripple.remove(), () => ripple.remove());
+});
+
 const toast = document.querySelector("#toast");
 const toastMessage = document.querySelector("#toast-message");
 let toastTimer;
@@ -769,7 +789,7 @@ function showRecordsView(viewName) {
   });
 }
 
-function renderRecords() {
+function renderRecords(records = visibleRecords()) {
   // Problems with the data come first: they replace the list completely.
   if (state.dataError) {
     document.querySelector("#records-error-message").textContent = state.dataError;
@@ -786,8 +806,6 @@ function renderRecords() {
     showRecordsView("range");
     return;
   }
-
-  const records = visibleRecords();
 
   if (records.length === 0) {
     showRecordsView("none");
@@ -867,7 +885,7 @@ function updateRecords() {
     state.selectedId = "";
   }
 
-  renderRecords();
+  renderRecords(records);
 
   if (state.map) {
     state.map.update({
