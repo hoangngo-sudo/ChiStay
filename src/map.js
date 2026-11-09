@@ -63,6 +63,7 @@ export function createMap(container, options = {}) {
     center,
     zoom: 13.6,
     attributionControl: true,
+    cooperativeGestures: true,
   });
   map.addControl(
     new mapboxgl.NavigationControl({ showCompass: false }),

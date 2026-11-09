@@ -33,6 +33,7 @@ let toastTimer;
 //
 // This is the only place that remembers what the user is doing.
 const storageKey = "chistay-apartments-v1";
+const savedLocations = new Map();
 
 const state = {
   screen: "overview",
@@ -263,7 +264,9 @@ function apartmentCard(apartment, index) {
 
   card.querySelector(".card-building").src = apartmentIllustration;
 
-  card.querySelector('[data-field="address"]').textContent = apartment.address;
+  const address = card.querySelector('[data-field="address"]');
+  address.textContent = apartment.address;
+  address.title = apartment.address;
 
   const rent = card.querySelector('[data-field="rent"]');
   const formattedRent = formatRent(apartment.rent);
@@ -984,13 +987,43 @@ document.addEventListener("click", async (event) => {
   }
 
   if (action === "open-apartment") {
-    state.apartment = state.apartments[Number(button.dataset.index)];
-    state.matches = [];
-    state.match = null;
+    const apartment = state.apartments[Number(button.dataset.index)];
+    addressSearchController?.abort();
+    const controller = new AbortController();
+    addressSearchController = controller;
     state.toast = "";
-    renderVerify();
-    showScreen("verify");
-    await searchAddress(state.apartment);
+    button.disabled = true;
+    let matches = [];
+    try {
+      const cached = savedLocations.get(apartment.address.toLowerCase());
+      matches = cached ? [cached] : await findAddress(apartment.address, controller.signal);
+    } catch {
+      if (controller.signal.aborted) return;
+    } finally {
+      button.disabled = false;
+      if (addressSearchController === controller) addressSearchController = null;
+    }
+    if (controller.signal.aborted) return;
+    state.apartment = apartment;
+    if (matches.length > 1) {
+      const address = apartment.address.toLowerCase();
+      const exactMatches = matches.filter((match) => shortLabel(match.label).toLowerCase() === address);
+      if (exactMatches.length === 1) matches = exactMatches;
+    }
+    if (matches.length === 1) {
+      state.match = matches[0];
+      savedLocations.set(apartment.address.toLowerCase(), state.match);
+      state.selectedId = "";
+      state.filters = defaultFilters(state.data ? state.data.lastDay : "");
+      renderExplore();
+      showScreen("explore");
+    } else {
+      state.matches = [];
+      state.match = null;
+      renderVerify();
+      showScreen("verify");
+      await searchAddress(apartment);
+    }
     return;
   }
 
@@ -1074,7 +1107,17 @@ document.addEventListener("click", async (event) => {
     // not the same number: the list is ordered, the saved array is not.
     const card = button.closest(".apartment-card");
     const cards = Array.from(document.querySelectorAll(".apartment-card"));
+    closeCardTray();
     openDeleteDialog(Number(button.dataset.index), cards.indexOf(card));
+    return;
+  }
+
+  if (action === "sheet-delete" && trayCard) {
+    const card = trayCard;
+    const cards = Array.from(document.querySelectorAll(".apartment-card"));
+    const index = Number(card.querySelector('[data-action="delete-apartment"]').dataset.index);
+    closeCardTray({ immediate: true });
+    openDeleteDialog(index, cards.indexOf(card));
     return;
   }
 
@@ -1094,9 +1137,281 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+// Long press on a phone
+//
+// Holding a card still opens its action tray, which slides the delete button
+// up from the card's bottom edge. Nothing happens until the hold completes, so
+// a scroll, a drag or a quick tap must cancel the timer instead of leaving a
+// tray behind. Desktop keeps the button visible in the row, so the mouse is
+// ignored here; the contextmenu event covers right click, the Menu key and
+// Shift+F10.
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_SLOP = 10;
+const phoneScreen = window.matchMedia("(max-width: 560px)");
+
+let holdTimer = 0;
+let holdCard = null;
+let holdStart = null;
+let trayCard = null;
+
+const cardSheet = document.querySelector("#card-sheet");
+const cardSheetDelete = cardSheet.querySelector('[data-action="sheet-delete"]');
+const sheetExitMs = 500;
+
+let sheetDrag = null;
+
+function reducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function openCardTray(card) {
+  if (!card || card === trayCard || !phoneScreen.matches) {
+    return;
+  }
+  closeCardTray({ immediate: true });
+  card.classList.add("is-tray-open");
+  trayCard = card;
+
+  const source = card.querySelector('[data-action="delete-apartment"]');
+  cardSheetDelete.innerHTML = icon("trash-2");
+  cardSheetDelete.setAttribute("aria-label", source.getAttribute("aria-label"));
+
+  cardSheet.classList.remove("is-closing");
+  cardSheet.showModal();
+  cardSheetDelete.focus({ preventScroll: true });
+}
+
+// The dialog would disappear in a single frame, so it stays open until the
+// slide down has finished and only then closes.
+function closeCardTray({ immediate = false, restoreFocus = false } = {}) {
+  const card = trayCard;
+  if (!card) {
+    return;
+  }
+
+  trayCard = null;
+  card.classList.remove("is-tray-open");
+  sheetDrag = null;
+  cardSheet.classList.remove("is-dragging");
+
+  if (!cardSheet.open) {
+    return;
+  }
+
+  const finish = () => {
+    cardSheet.classList.remove("is-closing");
+    cardSheet.close();
+    cardSheet.style.removeProperty("transform");
+    cardSheet.style.removeProperty("--sheet-drag");
+    if (restoreFocus) {
+      card.focus({ preventScroll: true });
+    }
+  };
+
+  if (immediate || reducedMotion()) {
+    finish();
+    return;
+  }
+
+  cardSheet.classList.add("is-closing");
+
+  let settled = false;
+  const settle = () => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    cardSheet.removeEventListener("transitionend", onEnd);
+    clearTimeout(fallback);
+    finish();
+  };
+  const onEnd = (event) => {
+    if (event.target === cardSheet && event.propertyName === "transform") {
+      settle();
+    }
+  };
+  const fallback = setTimeout(settle, sheetExitMs + 100);
+  cardSheet.addEventListener("transitionend", onEnd);
+}
+
+// Drag to dismiss
+//
+// The sheet follows the finger 1:1 with no easing, then the same curve carries
+// it from wherever it was released. Passing 40% of its height, or letting go
+// faster than 500px/s, dismisses it.
+cardSheet.addEventListener("pointerdown", (event) => {
+  if (event.pointerType === "mouse" || !cardSheet.open || reducedMotion()) {
+    return;
+  }
+  if (event.target.closest("button")) {
+    return;
+  }
+
+  sheetDrag = {
+    id: event.pointerId,
+    startY: event.clientY,
+    lastY: event.clientY,
+    lastTime: event.timeStamp,
+    velocity: 0,
+    travel: 0,
+    height: cardSheet.getBoundingClientRect().height,
+  };
+  cardSheet.classList.add("is-dragging");
+  // Capture keeps the drag alive once the finger leaves the sheet, which it
+  // does on the way up. A pointer that is already gone cannot be captured.
+  try {
+    cardSheet.setPointerCapture(event.pointerId);
+  } catch {
+    cardSheet.classList.remove("is-dragging");
+    sheetDrag = null;
+  }
+});
+
+cardSheet.addEventListener("pointermove", (event) => {
+  if (!sheetDrag || event.pointerId !== sheetDrag.id) {
+    return;
+  }
+
+  const distance = event.clientY - sheetDrag.startY;
+  // Down follows the finger; up gives way at a fifth of the distance, so the
+  // edge reads as attached instead of loose.
+  const travel = distance >= 0 ? distance : distance * 0.2;
+
+  const elapsed = event.timeStamp - sheetDrag.lastTime;
+  if (elapsed > 0) {
+    sheetDrag.velocity = (event.clientY - sheetDrag.lastY) / elapsed;
+  }
+  sheetDrag.lastY = event.clientY;
+  sheetDrag.lastTime = event.timeStamp;
+  sheetDrag.travel = travel;
+
+  cardSheet.style.transform = `translateY(${travel}px)`;
+  cardSheet.style.setProperty(
+    "--sheet-drag",
+    String(Math.min(Math.max(travel / sheetDrag.height, 0), 1)),
+  );
+});
+
+function endSheetDrag() {
+  if (!sheetDrag) {
+    return;
+  }
+
+  const grab = sheetDrag;
+  sheetDrag = null;
+  cardSheet.classList.remove("is-dragging");
+  const dismissed = grab.travel > grab.height * 0.4 || grab.velocity > 0.5;
+
+  // Keep the released offset for one frame so the curve has a start value
+  // instead of jumping to the open position first.
+  requestAnimationFrame(() => {
+    cardSheet.style.removeProperty("transform");
+    cardSheet.style.removeProperty("--sheet-drag");
+    if (dismissed) {
+      closeCardTray({ restoreFocus: true });
+    }
+  });
+}
+
+cardSheet.addEventListener("pointerup", endSheetDrag);
+cardSheet.addEventListener("pointercancel", endSheetDrag);
+
+cardSheet.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeCardTray({ restoreFocus: true });
+});
+
+// Escape also closes the sheet from the keyboard. The cancel event above covers
+// browsers that report it, but not every one does, so the key is handled here.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !trayCard) {
+    return;
+  }
+  closeCardTray({ restoreFocus: true });
+});
+
+cardSheet.addEventListener("click", (event) => {
+  // A tap on the backdrop lands on the dialog itself, a tap inside it does not.
+  if (event.target !== cardSheet) {
+    return;
+  }
+  if (event.clientY < cardSheet.getBoundingClientRect().top) {
+    closeCardTray({ restoreFocus: true });
+  }
+});
+
+function cancelCardHold() {
+  clearTimeout(holdTimer);
+  holdTimer = 0;
+  holdCard?.classList.remove("is-holding");
+  holdCard = null;
+  holdStart = null;
+}
+
+document.addEventListener("pointerdown", (event) => {
+  const card = event.target.closest?.(".apartment-card") || null;
+
+  // A press anywhere else closes whichever tray is open.
+  if (card !== trayCard && !event.target.closest?.("#card-sheet")) {
+    closeCardTray();
+  }
+
+  if (event.pointerType === "mouse" || !card || !phoneScreen.matches) {
+    return;
+  }
+
+  // Pressing a control is a click, not the start of a hold.
+  if (event.target.closest("button, a, input, select, textarea")) {
+    return;
+  }
+
+  cancelCardHold();
+  holdCard = card;
+  holdStart = { x: event.clientX, y: event.clientY };
+  card.classList.add("is-holding");
+
+  holdTimer = setTimeout(() => {
+    const held = holdCard;
+    cancelCardHold();
+    openCardTray(held);
+  }, LONG_PRESS_MS);
+}, { capture: true });
+
+document.addEventListener("pointermove", (event) => {
+  if (!holdCard || !holdStart) {
+    return;
+  }
+  const movedX = event.clientX - holdStart.x;
+  const movedY = event.clientY - holdStart.y;
+  if (movedX * movedX + movedY * movedY > LONG_PRESS_SLOP * LONG_PRESS_SLOP) {
+    cancelCardHold();
+  }
+}, { capture: true });
+
+document.addEventListener("pointerup", cancelCardHold, { capture: true });
+document.addEventListener("pointercancel", cancelCardHold, { capture: true });
+
+// Scrolling moves the card, so the hold no longer refers to what the finger is
+// over, and an open tray would scroll away from its card.
+document.addEventListener("scroll", () => {
+  cancelCardHold();
+  closeCardTray();
+}, { capture: true, passive: true });
+
+document.addEventListener("contextmenu", (event) => {
+  const card = event.target.closest?.(".apartment-card") || null;
+  if (!card || !phoneScreen.matches) {
+    return;
+  }
+  event.preventDefault();
+  cancelCardHold();
+  openCardTray(card);
+});
+
 function saveApartment(decision) {
   const previous = [...state.apartments];
   const apartment = { ...state.apartment, decision };
+  if (state.match) savedLocations.set(apartment.address.toLowerCase(), state.match);
 
   const existingIndex = state.apartments.findIndex((saved) => {
     return saved.address.toLowerCase() === apartment.address.toLowerCase();

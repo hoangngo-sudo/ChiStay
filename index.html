@@ -250,7 +250,6 @@
                 <div class="records-header">
                   <div>
                     <h2 id="records-heading"></h2>
-                    <p>Within the selected filters</p>
                   </div>
                   <span class="sort-label">Newest first</span>
                 </div>
@@ -350,8 +349,15 @@
       </div>
     </dialog>
 
+    <dialog id="card-sheet" class="card-sheet" aria-labelledby="card-sheet-title">
+      <div class="card-sheet-handle" aria-hidden="true"></div>
+      <h2 id="card-sheet-title" class="sr-only">Apartment actions</h2>
+      <button class="icon-button bordered" data-action="sheet-delete" aria-label="Delete apartment" title="Delete apartment"></button>
+      <p class="card-sheet-label" aria-hidden="true">Delete apartment</p>
+    </dialog>
+
     <template id="apartment-card-template">
-      <article class="apartment-card">
+      <article class="apartment-card" tabindex="0">
         <img class="card-building" alt="" aria-hidden="true" />
 
         <div class="card-top">
@@ -369,7 +375,9 @@
 
         <div class="card-actions">
           <button class="button primary" data-action="open-apartment">View nearby incidents</button>
-          <button class="icon-button bordered" data-action="delete-apartment" aria-label="Delete apartment" title="Delete apartment"></button>
+          <div class="card-tray" data-field="tray">
+            <button class="icon-button bordered" data-action="delete-apartment" aria-label="Delete apartment" title="Delete apartment"></button>
+          </div>
         </div>
       </article>
     </template>
