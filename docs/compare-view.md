@@ -44,6 +44,9 @@ the production screen are the record.
 - The overview card shows no incident count. The count lives here, where it
   can be read against other places. The date range and radius saved with a
   visit decision are still restored when that place is reopened.
+- `View all incidents` is underlined at rest (1px, 3px offset). The band is a
+  dense block of numbers and the action has no icon, so the line is what marks
+  it as a control rather than another caption.
 - On a phone the band stacks. The address and meta pills sit in one column and
   `View all incidents` sits under them, not beside the last pill. The page
   title balances its lines and the subtitle wraps as one sentence, so neither

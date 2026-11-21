@@ -105,6 +105,11 @@ going back one level. 44px tall, `--primary` text at 13px/600, no fill.
 Use it for "back" and "show more". Do not use it for a state-changing action;
 that is a `secondary` button.
 
+The Compare band's `View all incidents` is the exception to the flat look: it is
+underlined at rest (`text-decoration-thickness: 1px`, `text-underline-offset:
+3px`). It has no icon and sits among totals and category counts, so without the
+line it reads as a caption rather than an action.
+
 ## SaveChoice and SaveSecondary
 
 Dialog-only controls for the save decision. They are not `.button`: they are full

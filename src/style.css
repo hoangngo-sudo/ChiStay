@@ -1630,6 +1630,9 @@ fieldset.filter-group {
 .compare-open {
   margin-top: 8px;
   justify-content: start;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 .compare-days {
   min-width: 0;
