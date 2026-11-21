@@ -78,12 +78,33 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     }));
     await page.goto(server.resolvedUrls.local[0]);
     await page.locator('#overview-empty').waitFor({ state: 'visible' });
+
+    // With no saved places, Compare keeps its empty body but hides the
+    // subtitle that would otherwise repeat the empty message.
+    await page.locator('#nav-compare').click();
+    await page.locator('#compare-body .empty-overview').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#compare-window').isVisible(), false);
+    assert.equal(await page.locator('#compare-body .empty-overview .local-icon').isVisible(), true);
+    assert.equal(await page.locator('#compare-body .empty-overview .local-icon svg').count(), 1);
+    await page.locator('#nav-overview').click();
+    await page.locator('#overview-empty').waitFor({ state: 'visible' });
+
     await page.locator('.sidebar [data-action="add"]').click();
     await page.locator('#screen-verify').waitFor({ state: 'visible' });
     await page.locator('#address').fill('1200 W Test St, Chicago');
     await page.locator('#find-address').click();
     await page.locator('[data-action="explore"]').click();
     await page.locator('.record-row').first().waitFor();
+
+    // A confirmed address belongs on the list before the visit decision.
+    const savedAfterFind = await page.evaluate(() => {
+      return JSON.parse(localStorage.getItem('chistay-apartments-v1') || '[]');
+    });
+    assert.equal(savedAfterFind.length, 1);
+    assert.equal(savedAfterFind[0].decision, 'undecided');
+    assert.equal(Number.isFinite(savedAfterFind[0].latitude), true);
+    assert.equal(Number.isFinite(savedAfterFind[0].longitude), true);
+
     assert.equal(await page.evaluate(() => window.__testMap.options.cooperativeGestures), true);
     await page.waitForFunction(() => {
       const features = window.__testMap?.getSource('incidents')?.data.features;
@@ -180,6 +201,11 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     await expectRecords(['101', '102', '103', '108', '109', '111', '112'], ['101', '102']);
 
     await page.locator('#date-toggle').click();
+    assert.equal(await page.locator('#date-toggle .date-caret svg').count(), 1);
+    const datePanelOrigin = await page.locator('#date-panel').evaluate((element) => {
+      return getComputedStyle(element).transformOrigin;
+    });
+    assert.match(datePanelOrigin, /px/);
     await page.locator('#date-month').selectOption('9');
     await page.locator('[data-day="2026-10-19"]').click();
     await page.locator('[data-day="2026-10-20"]').click();
@@ -189,6 +215,10 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     await page.locator('#save-button').click();
     await page.waitForFunction(() => document.querySelector('#save-dialog').getAnimations().some(animation => animation.transitionProperty === 'opacity'));
     assert.equal(await saveDialog.evaluate(element => element.open), true);
+    const dialogOrigin = await saveDialog.evaluate((element) => {
+      return getComputedStyle(element).transformOrigin;
+    });
+    assert.match(dialogOrigin, /px/);
     await page.locator('#save-dialog [data-action="close-dialog"]').click({ force: true });
     await page.waitForFunction(() => getComputedStyle(document.querySelector('#save-dialog')).display === 'none');
 
@@ -219,25 +249,73 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     assert.equal(await toast.evaluate(element => element.getAnimations().length), 0);
 
     await page.locator('[data-action="overview"]').first().click();
+    // The overview card shows no incident count; only the visit-decision
+    // window is stored, and it is reused when the place is reopened.
+    assert.equal(await page.locator('.apartment-card .card-incidents').count(), 0);
+    const savedFilters = await page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem('chistay-apartments-v1'));
+      return saved[0].filters;
+    });
+    assert.deepEqual(savedFilters, {
+      radius: 1,
+      startDay: '2026-10-19',
+      endDay: '2026-10-20',
+    });
     await page.locator('[data-action="open-apartment"]').click();
     await page.locator('#screen-explore').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#explore-address').textContent(), '1200 W Test St, Chicago, IL');
+    assert.equal(await page.locator('[data-action="radius"][aria-pressed="true"]').getAttribute('data-radius'), '1');
+    assert.equal(await page.locator('#date-summary').textContent(), '10/19/2026 - 10/20/2026');
     await page.reload();
     await page.locator('[data-action="open-apartment"]').click();
     await page.locator('#screen-explore').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#explore-address').textContent(), '1200 W Test St, Chicago, IL');
+    assert.equal(await page.locator('[data-action="radius"][aria-pressed="true"]').getAttribute('data-radius'), '1');
+    assert.equal(await page.locator('#date-summary').textContent(), '10/19/2026 - 10/20/2026');
 
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await toast.evaluate(element => {
-      element.classList.remove('is-expiring');
-      element.hidden = false;
+    // Compare keeps one shared 10-day / 0.5-mile window even though this
+    // place's saved filters are 1 mile / Oct 19-20.
+    // Six fixture records pass the Compare filters.
+    await page.locator('#nav-compare').click();
+    await page.locator('.compare-panel').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.compare-hint').count(), 0);
+    assert.equal(
+      await page.locator('#compare-window').textContent(),
+      'Oct 12-21, 2026 · 0.5 mi',
+    );
+    assert.equal(await page.locator('.compare-band').count(), 1);
+    assert.equal(await page.locator('.compare-band .compare-bar').count(), 10);
+    const compareTotal = await page.locator('.compare-total').evaluate((element) => {
+      return element.textContent.replace(/\s+/g, ' ').trim();
     });
-    await page.clock.fastForward(300);
-    await toast.evaluate(element => {
-      element.classList.add('is-expiring');
-      element.hidden = true;
+    assert.equal(compareTotal, '6 incidents in 10 days');
+    const chartLabel = await page.locator('.compare-band .compare-bars').getAttribute('aria-label');
+    assert.match(chartLabel, /6 incidents across 10 days\./);
+    assert.match(chartLabel, /Oct 21: 1/);
+    assert.equal(await page.locator('.compare-record').count(), 3);
+    await page.locator('[data-action="open-compare-place"]').click();
+    await page.locator('#screen-explore').waitFor({ state: 'visible' });
+
+    // A second label for the same street address must not create another
+    // card. Seed the abbreviated and spelled-out labels, then reload so
+    // loadApartments merges them.
+    await page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem('chistay-apartments-v1'));
+      const duplicate = {
+        ...saved[0],
+        address: '1200 West Test Street, Chicago 60612',
+      };
+      localStorage.setItem('chistay-apartments-v1', JSON.stringify([...saved, duplicate]));
     });
-    await page.waitForFunction(() => document.querySelector('#toast').getAnimations().some(animation => animation.transitionProperty === 'opacity'));
+    await page.reload();
+    await page.locator('.apartment-card').first().waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.apartment-card').count(), 1);
+    assert.equal(
+      await page.evaluate(() => {
+        return JSON.parse(localStorage.getItem('chistay-apartments-v1')).length;
+      }),
+      1,
+    );
 
     assert.deepEqual(pageErrors, []);
     assert.deepEqual(externalRequests, []);
