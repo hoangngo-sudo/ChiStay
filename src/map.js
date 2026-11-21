@@ -321,7 +321,7 @@ export function createMap(container, options = {}) {
       if (!apartmentMarker) {
         const element = document.createElement("div");
         element.className = "apartment-marker";
-        element.setAttribute("aria-label", "Apartment location");
+        element.setAttribute("aria-label", "Chicago Place location");
         apartmentMarker = new mapboxgl.Marker({ element })
           .setLngLat(coordinates)
           .addTo(map);

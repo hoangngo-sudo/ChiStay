@@ -12,7 +12,10 @@ list is longer or the options are content (housing type, category).
 
 The housing type select uses a styled picker and option hover states in browsers
 that support customizable selects. Other browsers retain the native picker;
-the select continues to provide its native form and keyboard behavior.
+the select continues to provide its native form and keyboard behavior. Both form
+selects sit in `.select-wrap` with a decorative `.select-caret`; in browsers that
+support `select:open` the caret turns from down to up while the picker is open.
+Other browsers keep the static caret and the native picker.
 
 ```html
 <!-- Correct: label, then field, then the error slot -->
@@ -101,13 +104,19 @@ needs two endpoints.
 ```html
 <button class="date-field" id="date-toggle" aria-expanded="false" aria-controls="date-panel">
   <span id="date-summary">Select a date range</span>
-  <span class="local-icon" data-icon="calendar" data-size="16" aria-hidden="true"></span>
+  <span class="date-field-icons" aria-hidden="true">
+    <span class="local-icon" data-icon="calendar" data-size="16"></span>
+    <span class="local-icon date-caret" data-icon="chevron-right" data-size="14"></span>
+  </span>
 </button>
 <div class="date-panel" id="date-panel" hidden>…</div>
 ```
 
 - Same 49px height, 12px padding and ring as a text field. `aria-expanded`
   drives the popover; the open state is `--ring-raised-hover` (no outline exists).
+- The panel opens below the field, or above when there is not enough room below.
+  The caret points down for a panel below and turns up for one above. The panel
+  enters from the trigger's centre, not from its own centre.
 - The summary uses `tabular-nums` so the two dates do not jitter as they change.
 - Day cells are `.date-day` with a 36px circle inside a 40px cell (44px on touch).
   Selected day is a filled `--primary` circle; days inside the range sit on
@@ -152,3 +161,7 @@ anywhere else turns into pills inside a rounded box.
 `transparent` until selected, then `--primary-wash` + `--primary` with a
 `check-circle` glyph closing the row. Unselected rows carry no glyph, so the mark
 means "this one". One row at a time: radio-like, never a multi-select.
+
+- `.match-option` labels stay on one line and ellipsise at the end. The row's
+  `title` carries the full address for hover, and the button's accessible name
+  keeps the full text.

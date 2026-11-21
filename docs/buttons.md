@@ -16,6 +16,11 @@ So a `.button` in `.main` or a `<dialog>` is a pill, even though `.button` sets
 `--radius`: the rule above is more specific and wins. Inside the sidebar, the
 filter row, the records panel and the map popup, buttons take 6px corners.
 
+The Mapbox zoom group is the exception that proves the rule: its native group
+background, 2px ring and divider are removed, and the plus and minus become two
+separate 32px pills carrying the same `--ring-raised`. They are 44px on touch, so
+neither control looks flatter than the other.
+
 Do not add a `border-radius` to a new button to force a shape. If a button looks
 wrong, it is in the wrong container.
 
@@ -36,7 +41,7 @@ no variant renders as a transparent, unpadded element and is a bug.
 <!-- Correct: primary for the one next step -->
 <button class="button primary" data-action="add">
   <span class="local-icon" data-icon="add-apartment" data-size="18" aria-hidden="true"></span>
-  Add apartment
+  Add Chicago Place
 </button>
 
 <!-- Incorrect: ghost does not exist, and Cancel must never be primary -->
@@ -76,7 +81,7 @@ Variants: plain (transparent, `--muted`, sits on a surface) and `.bordered`
 ```html
 <!-- Correct: label for assistive tech, tooltip for sighted users -->
 <button class="icon-button bordered" data-action="delete-apartment"
-        aria-label="Delete apartment" title="Delete apartment"></button>
+        aria-label="Delete Chicago Place" title="Delete Chicago Place"></button>
 
 <!-- Incorrect: an icon-only button with no accessible name -->
 <button class="icon-button"><svg>…</svg></button>

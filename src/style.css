@@ -54,7 +54,7 @@
      Controls are raised. Panels and cards are not: they are regions of the page, so they get an inset hairline and stay flat. */
   --ring-raised: 0 0 0 1px rgb(0 0 0 / 0.08), 0 2px 2px rgb(0 0 0 / 0.04);
   --ring-raised-hover: 0 0 0 1px var(--border-strong), 0 2px 2px rgb(0 0 0 / 0.04);
-  --shadow-toast: 0 4px 16px rgb(0 0 0 / 0.06);
+  --shadow-toast: 0 8px 26px -8px rgb(0 0 0 / 0.18);
   --shadow-popover: 0 6px 20px rgb(0 0 0 / 0.09);
   --shadow-dialog: 0 12px 38px rgb(0 0 0 / 0.11);
   --backdrop: rgb(0 0 0 / 0.18);
@@ -77,7 +77,10 @@ body {
 }
 body {
   margin: 0;
-  min-width: 320px;
+  /* The viewport meta sets the 320px support floor. A fixed min-width here
+     adds a horizontal scroll whenever a desktop scrollbar narrows the client
+     area below 320px. */
+  min-width: 0;
 }
 button,
 a,
@@ -100,8 +103,25 @@ button {
 button:not(.sidebar *, .filter-group *, .records-panel *, .stack-popup-row) {
   border-radius: 9999px;
 }
+#main .mapboxgl-ctrl-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: visible;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
 #main .mapboxgl-ctrl-group button {
+  width: 32px;
+  height: 32px;
+  border: 0;
   border-radius: 9999px;
+  background: var(--surface);
+  box-shadow: var(--ring-raised);
+}
+#main .mapboxgl-ctrl-group button + button {
+  border-top: 0;
 }
 button:disabled {
   cursor: not-allowed;
@@ -116,10 +136,18 @@ a {
 a:active {
   opacity: 0.75;
 }
-/* No focus outline anywhere. Without this the browser's own ring comes back on
-   buttons, links and inputs. State is shown with the ring on the control, the
-   error halo and the shake instead. */
+/* Keyboard focus gets a visible ink ring. It is neutral, so it does not add a
+   second accent colour. The segmented radius control keeps its inset ring
+   because its container clips an outer outline. */
 :focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+/* The heading and main are programmatic focus destinations after a screen
+   change or the skip link. A ring around a whole region is noise, so those two
+   targets do not draw one. */
+h1:focus-visible,
+main:focus-visible {
   outline: none;
 }
 [hidden] {
@@ -134,6 +162,25 @@ a:active {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+/* First tab stop: invisible until focused, then a surface on top of the page. */
+.skip-link {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  left: max(8px, env(safe-area-inset-left, 0px));
+  z-index: var(--z-toast);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--ring-raised-hover);
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 .topbar {
   min-height: calc(65px + env(safe-area-inset-top, 0px));
@@ -192,6 +239,12 @@ a:active {
   flex: 0 0 auto;
 }
 
+/* The add item carries both labels; the short one appears on phones so the
+   three-item row stays on one line. */
+.nav-label-short {
+  display: none;
+}
+
 .nav-item:active {
   background: var(--surface-pressed);
 }
@@ -202,6 +255,9 @@ a:active {
   flex: 1;
   min-width: 0;
   padding: 24px max(36px, env(safe-area-inset-right, 0px)) max(48px, calc(24px + env(safe-area-inset-bottom, 0px))) max(36px, env(safe-area-inset-left, 0px));
+}
+.page-heading > div {
+  min-width: 0;
 }
 .page-heading {
   display: flex;
@@ -215,6 +271,7 @@ a:active {
   font-size: 20px;
   line-height: 24px;
   font-weight: 500;
+  text-wrap: balance;
 }
 .explore-heading h1 {
   text-wrap: balance;
@@ -378,6 +435,8 @@ a:active {
   display: flex;
   height: 16px;
 }
+
+/* The card no longer prints an incident count; the count lives on Compare. */
 .card-actions {
   position: absolute;
   z-index: 1;
@@ -524,6 +583,7 @@ a:active {
 .empty-overview h2 {
   font-size: 18px;
   margin: 20px 0 6px;
+  text-wrap: pretty;
 }
 .empty-overview p {
   max-width: 42ch;
@@ -673,6 +733,35 @@ select {
   background-position: right 11px center;
   cursor: pointer;
 }
+/* The two form selects use a wrapper so the caret can animate while the
+   native picker is open. */
+.select-wrap {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+.select-wrap select {
+  background-image: none;
+  padding-right: 34px;
+}
+.select-caret {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--muted);
+  transform: translateY(-50%) rotate(90deg);
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  pointer-events: none;
+}
+.select-wrap:has(select:open) .select-caret {
+  transform: translateY(-50%) rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .select-caret,
+  .date-caret {
+    transition: none;
+  }
+}
 
 select:invalid,
 select option[value=""] {
@@ -805,6 +894,9 @@ select option[value=""] {
 .match-option .label {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .match-option.selected {
   background: var(--primary-wash);
@@ -1055,6 +1147,21 @@ fieldset.filter-group {
 .date-field .local-icon {
   color: var(--muted);
 }
+.date-field-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.date-caret {
+  transform: rotate(90deg);
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* The caret points down while the panel opens below, and turns up when the
+   panel has to open above the field. */
+.date-field[aria-expanded="true"].is-above .date-caret {
+  transform: rotate(-90deg);
+}
 .date-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -1066,6 +1173,26 @@ fieldset.filter-group {
   border: 0;
   border-radius: var(--radius);
   box-shadow: var(--ring-raised-hover);
+  transform-origin: var(--picker-origin-x, 50%) var(--picker-origin-y, 0px);
+}
+.date-panel.is-above {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .date-panel {
+    animation: date-panel-in 180ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+@keyframes date-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--picker-enter-y, -4px)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .date-panel-head {
   display: flex;
@@ -1389,6 +1516,216 @@ fieldset.filter-group {
   max-width: 100ch;
   margin: 4px 0;
 }
+
+/* Screen 4 - compare all saved places
+   One band per place, three aligned columns: identity and totals, weekly
+   bars on a shared scale, then the newest incidents. */
+
+.compare-panel {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.compare-band-head,
+.compare-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) 220px minmax(0, 1.1fr);
+  gap: 24px;
+}
+.compare-band-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  /* The band head's background covers the panel's inset hairline, so redraw
+     the top and side edges here. */
+  box-shadow:
+    inset 0 1px 0 var(--border),
+    inset 1px 0 0 var(--border),
+    inset -1px 0 0 var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.compare-band {
+  align-items: start;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.compare-band:last-child {
+  border-bottom: 0;
+}
+.compare-place {
+  min-width: 0;
+}
+.compare-place h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.compare-place-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.compare-place-meta .decision {
+  margin: 0;
+}
+.compare-decision-quiet {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+.compare-total {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+.compare-total strong {
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.compare-total span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.compare-top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.compare-top strong {
+  color: var(--ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.compare-dot {
+  color: var(--border-strong);
+}
+.compare-open {
+  margin-top: 8px;
+  justify-content: start;
+}
+.compare-days {
+  min-width: 0;
+}
+.compare-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 48px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--border);
+}
+.compare-bar {
+  flex: 1;
+  min-width: 0;
+  background: var(--incident);
+  border-radius: 1px 1px 0 0;
+}
+.compare-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.compare-caption {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.compare-recent {
+  min-width: 0;
+}
+.compare-label {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.compare-records {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.compare-record {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.compare-record:last-child {
+  border-bottom: 0;
+}
+.compare-record .record-copy {
+  flex: 1;
+}
+.compare-record time {
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.compare-empty-line {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.compare-band-broken .compare-band-error {
+  grid-column: 2 / -1;
+  align-self: center;
+  max-width: 55ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.compare-message {
+  max-width: 630px;
+}
+.compare-message h2 {
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+.compare-message p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .toast {
   position: fixed;
   bottom: max(24px, calc(12px + env(safe-area-inset-bottom, 0px)));
@@ -1422,7 +1759,8 @@ fieldset.filter-group {
 @media (prefers-reduced-motion: no-preference) {
   .pointer-input .dialog {
     opacity: 0;
-    transform: scale(0.98);
+    transform: scale(0.96);
+    transform-origin: var(--dialog-origin-x, 50%) var(--dialog-origin-y, 50%);
     transition:
       opacity 160ms cubic-bezier(0.32, 0.72, 0, 1),
       transform 160ms cubic-bezier(0.32, 0.72, 0, 1),
@@ -1463,7 +1801,7 @@ fieldset.filter-group {
   @starting-style {
     .pointer-input .dialog[open] {
       opacity: 0;
-      transform: scale(0.98);
+      transform: scale(0.96);
     }
     .pointer-input .dialog[open]::backdrop {
       opacity: 0;
@@ -1607,8 +1945,38 @@ fieldset.filter-group {
     width: 90%;
     height: auto;
   }
+  .compare-band-head,
+  .compare-band {
+    grid-template-columns: minmax(0, 1fr) 190px minmax(0, 1fr);
+    gap: 18px;
+  }
+}
+/* The vertical sidebar still takes 205px here, so three compare columns are
+   squeezed. Stack them before that happens, not at the 800px shell breakpoint. */
+@media (max-width: 960px) {
+  .compare-band-head {
+    display: none;
+  }
+  .compare-band {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    padding: 16px;
+  }
+  .compare-band-broken .compare-band-error {
+    grid-column: 1;
+  }
+  .compare-recent {
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .compare-open {
+    margin-top: 0;
+  }
 }
 @media (max-width: 800px) {
+  html {
+    scroll-padding-top: 70px;
+  }
   .topbar {
     min-height: calc(58px + env(safe-area-inset-top, 0px));
     padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px));
@@ -1618,6 +1986,9 @@ fieldset.filter-group {
     min-height: calc(100dvh - 58px - env(safe-area-inset-top, 0px));
   }
   .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
     width: auto;
     flex-direction: row;
     padding: 8px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px));
@@ -1628,6 +1999,11 @@ fieldset.filter-group {
     width: auto;
     flex: 1;
     justify-content: center;
+    min-width: 0;
+    padding-inline: 10px;
+  }
+  .nav-item span {
+    text-align: center;
   }
   .main {
     padding: 24px max(20px, env(safe-area-inset-right, 0px)) max(36px, calc(20px + env(safe-area-inset-bottom, 0px))) max(20px, env(safe-area-inset-left, 0px));
@@ -1652,12 +2028,49 @@ fieldset.filter-group {
   }
 }
 @media (max-width: 560px) {
+  /* Show the short add label so Overview / Add / Compare stays one line. */
+  .nav-label-full {
+    display: none;
+  }
+  .nav-label-short {
+    display: inline;
+  }
+  .sidebar .nav-item {
+    padding-inline: 8px;
+    gap: 6px;
+    font-size: 13px;
+  }
   .page-heading {
     align-items: flex-start;
     flex-direction: column;
   }
+  .page-heading > div {
+    width: 100%;
+  }
+  /* A wrapped subtitle should break on word boundaries, not wherever the
+     box happens to end. */
+  .heading-subtitle {
+    display: block;
+    text-wrap: pretty;
+  }
   .shortlist-heading {
     gap: 6px;
+  }
+  .compare-place h3 {
+    text-wrap: pretty;
+  }
+  .compare-band-error,
+  .compare-empty-line {
+    text-wrap: pretty;
+  }
+  /* Address and pills flow in one column at phone width, so the action button
+     sits under them instead of riding up beside the last pill. */
+  .compare-place {
+    display: flex;
+    flex-direction: column;
+  }
+  .compare-place .compare-open {
+    align-self: flex-start;
   }
   .cards {
     grid-template-columns: 1fr;
@@ -1737,6 +2150,18 @@ fieldset.filter-group {
 
 }
 @media (max-width: 380px) {
+  .sidebar {
+    gap: 8px;
+    padding-inline: 12px;
+  }
+  .sidebar .nav-item {
+    padding-inline: 4px;
+    gap: 4px;
+  }
+  .nav-icon {
+    width: 14px;
+    height: 14px;
+  }
   .main {
     padding-inline: max(14px, env(safe-area-inset-left, 0px)) max(14px, env(safe-area-inset-right, 0px));
   }

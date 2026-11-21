@@ -16,6 +16,7 @@ gradients, no drop-shadowed cards, no accent colour on a neutral control.
 | File | Open it for |
 | --- | --- |
 | [docs/screens.md](docs/screens.md) | adding a screen, choosing a control, copy |
+| [docs/compare-view.md](docs/compare-view.md) | the comparison screen's decided shape, copy and rejects |
 | [docs/colors.md](docs/colors.md) | any colour, token, or new state |
 | [docs/typography.md](docs/typography.md) | any size, weight, or number |
 | [docs/buttons.md](docs/buttons.md) | anything the user presses |
@@ -40,15 +41,21 @@ gradients, no drop-shadowed cards, no accent colour on a neutral control.
    `--ring-raised-hover` on hover and while open. Panels, cards and empty states
    are flat: `inset 0 0 0 1px var(--border)`, no shadow. Never give a panel a
    drop shadow; it reads as a floating control.
-4. **There is no focus outline.** `:focus-visible { outline: none }` is
-   deliberate and global. State comes from the ring, the red error halo and the
-   shake. Do not add an outline back, and do not add a blue focus colour.
+4. **Keyboard focus gets an ink ring.** `:focus-visible { outline: 2px solid
+   var(--primary); outline-offset: 2px; }` is global. The heading and main
+   suppress it because they are programmatic focus destinations after a screen
+   change or the skip link. The segmented radius control keeps its inset ring
+   because its container clips an outer outline. Never use a blue focus colour.
 5. **Floors:** 12px for text, 44px for anything tappable, 16px for the computed
    font-size of an input or select on touch, 3:1 contrast for any non-text cue.
 6. **Motion is state or one-shot, never decorative.** 150ms colour and shadow,
    220ms to appear, 160ms to leave, 260ms error shake. All of it lives inside
    `@media (prefers-reduced-motion: no-preference)`; a motion without a
-   reduced-motion path is a bug.
+   reduced-motion path is a bug. Trigger-based surfaces grow from the control
+   that opened them, not from their own centre: the date panel scales and
+   translates from its field (and flips above with an upward caret when it does
+   not fit below), and dialogs scale from the button that opened them. A
+   centre-anchored scale detached from its trigger is not allowed.
 7. **One filled pill per view.** Two `primary` buttons on one screen means the
    screen has no next step.
 

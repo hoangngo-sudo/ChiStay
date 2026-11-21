@@ -124,18 +124,23 @@ export function prepareIncidents(rows, keptCategories) {
   };
 }
 
-export function defaultFilters(lastDay) {
+// A window ending on the snapshot's last day, inclusive.
+export function filtersForDays(lastDay, days) {
   if (!lastDay) {
     return { radius: 0.5, startDay: "", endDay: "", category: "" };
   }
   const start = new Date(`${lastDay}T00:00:00Z`);
-  start.setUTCDate(start.getUTCDate() - 89);
+  start.setUTCDate(start.getUTCDate() - (days - 1));
   return {
     radius: 0.5,
     startDay: start.toISOString().slice(0, 10),
     endDay: lastDay,
     category: "",
   };
+}
+
+export function defaultFilters(lastDay) {
+  return filtersForDays(lastDay, 90);
 }
 
 function distanceMiles(first, second) {

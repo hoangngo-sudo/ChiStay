@@ -9,7 +9,7 @@ with the `hidden` attribute by `showScreen()`, then a `.page-heading` with one
 ```html
 <section id="screen-overview" hidden>
   <div class="page-heading">
-    <h1>Your apartment shortlist</h1>
+    <h1>Your Chicago Places</h1>
   </div>
   …
 </section>
@@ -17,12 +17,14 @@ with the `hidden` attribute by `showScreen()`, then a `.page-heading` with one
 
 - Exactly one `<h1>` per screen. `showScreen()` sets `document.title` from it and
   focuses it, so a screen without an `h1` breaks the title and the focus move.
-- Name the screen after what the user does, not the data (`Your apartment
-  shortlist`, not `Apartments`).
+- Name the screen after what the user does, not the data (`Your Chicago
+  Places`, not `Apartments`).
 - A panel holding two or more sections needs a `.form-panel h2` per section. A
   panel with one section may omit the `h2`; do not restate the `h1` under it.
 - A screen with one panel uses `.form-panel`. A screen with a list of cards uses
-  `.cards`. Do not invent a third region type.
+  `.cards`. The compare screen is the one exception: its `.compare-panel` and
+  `.compare-band` exist because it is a comparison table, not a card list. Do
+  not reuse them for another screen.
 - Persistent screen furniture (topbar, sidebar) lives outside `#screen-*`.
 
 ## Which control
@@ -77,8 +79,8 @@ Three numbers, three jobs. Do not average them.
 ## Copy
 
 - Sentence case, no uppercase, no exclamation marks, no "Oops".
-- Name the state and the next action: `No apartments saved yet` + `Add apartment`,
-  not `No results`.
+- Name the state and the next action: `No Chicago Place to be saved yet` +
+  `Add Chicago Place`, not `No results`.
 - Errors say what to do (`Check the street address and try again`), not what
   failed internally (`Invalid input`, `Error 422`).
 - Units sit in the label as a muted parenthetical: `Maximum commute time
@@ -87,11 +89,38 @@ Three numbers, three jobs. Do not average them.
   take `<span class="required">*</span>`. Never both in one form.
 - When every field on a form is required, mark none of them: a page of asterisks
   says nothing. Mark the exceptions instead.
-- A toast announces a completed save in the past tense (`Apartment saved`). The
-  sentence is passed to `showToast()`, so a new save gets its own sentence naming
-  what was saved. It never asks a question, because it expires in 5s.
+- A toast announces a completed save in the past tense (`Chicago Place
+  saved`). The sentence is passed to `showToast()`, so a new save gets its own
+  sentence naming what was saved. It never asks a question, because it expires
+  in 5s.
 - While a save is in flight the primary button is disabled and keeps its label.
   There is no spinner and no "Saving…" state in this app.
+
+## Compare screen
+
+The compare screen puts every saved Chicago Place in one panel, one band after
+another. Each band shares the same three columns: place details and totals, ten
+daily bars on one scale, and the three newest incidents. The 10-day window,
+radius and categories are fixed for every place, so the bands are directly
+comparable.
+
+- Use `.compare-panel` for the outer region and `.compare-band` for each place.
+- Use `.compare-band-head` for the sticky column labels. It is visual only and
+  is hidden on phones.
+- Bands follow the shortlist order. This screen does not repeat the order
+  caption; the overview's sort label explains the same order.
+- The daily chart is a `role="img"` with the ten daily counts in its
+  accessible label. Print the first and last day under the bars. The header's
+  hover titles are not the only route to the values.
+- The page subtitle is a live `role="status"` region for loading, locating older
+  saved places, error and ready states. With no saved places it is hidden; the
+  empty state carries the message.
+- Keep the `.compare-record` rows non-interactive. The band's `View all
+  incidents` action opens the place's own incident screen for the full list.
+- Do not add filters to this screen. A different window or radius per place
+  would break the comparison.
+- The decided shape and rejected alternatives live in
+  [compare-view.md](compare-view.md).
 
 ## What these docs do not cover
 

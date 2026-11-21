@@ -14,13 +14,17 @@ spacing or hierarchy, not a shadow; a shadow makes it float like a control.
 
 `65px` topbar (plus `env(safe-area-inset-top)`), `253px` sidebar (`205px` under
 1150px, a horizontal bar under 800px), `.main` padded `24px` top and `36px`
-inline. The sidebar is the only navigation: two `.nav-item`s, never a third
-level. Every edge is a 1px `--border` line, never a shadow.
+inline. The sidebar is the only navigation: three `.nav-item`s (Overview, Add
+Chicago Place, Compare), never a third level. Under 800px the bar is sticky to
+the top of the viewport at `z-index: 3`; `html { scroll-padding-top: 70px }`
+keeps focused headings and the skip link below it. Under 560px the add item uses a
+short `Add place` label, with its full accessible name on the button, so the
+row never wraps. Every edge is a 1px `--border` line, never a shadow.
 
-## ApartmentCard
+## Chicago Place card
 
-One saved apartment. Lives in `.cards` (two columns, 24px gap, one column under
-560px).
+One saved Chicago Place. Lives in `.cards` (two columns, 24px gap, one column
+under 560px). The class name stays `.apartment-card`.
 
 ```html
 <article class="apartment-card">
@@ -45,6 +49,9 @@ One saved apartment. Lives in `.cards` (two columns, 24px gap, one column under
   and not an empty gap.
 - `.decision` is a chip, not text: 12px/500, `--decision-wash`, `--decision-ink`.
   It renders only for the worth-a-visit state; its absence is the other state.
+- The card shows no incident count. The count and its window belong on
+  Compare, where they can be read against other places; the card stays focused
+  on the address, rent, housing type and visit decision.
 - Actions sit in a fixed `.card-actions` row at the bottom left, so they line up
   across cards regardless of how long the address is.
 - The delete button lives in `.card-tray`. Above 560px the tray is
@@ -68,13 +75,15 @@ One saved apartment. Lives in `.cards` (two columns, 24px gap, one column under
 
 ## Dialog
 
-Two dialogs only: save (choose a decision) and delete (confirm). Native
-`<dialog>` with `showModal()`.
+Two dialogs only: visit decision and delete (confirm). The place itself is added
+as soon as an address is confirmed, so the first dialog records the
+worth-a-visit state and the incident window (date range and radius) used for the
+decision. Native `<dialog>` with `showModal()`.
 
 ```html
 <dialog id="save-dialog" class="dialog" aria-labelledby="save-dialog-title">
   <div class="dialog-header">
-    <h2 id="save-dialog-title">Save apartment</h2>
+    <h2 id="save-dialog-title">Visit decision</h2>
     <button class="icon-button" data-action="close-dialog" aria-label="Close">…</button>
   </div>
   <div class="dialog-context">
@@ -87,10 +96,14 @@ Two dialogs only: save (choose a decision) and delete (confirm). Native
 
 - `min(479px, 100% - 32px)` wide, 24px padding, `--shadow-dialog` on top of the
   control ring. The backdrop is `--backdrop` (18% black).
-- Enters at `scale(0.98)` → `1` over 220ms ease-out; leaves in 160ms. Never from
-  `scale(0)`: an element should keep a visible shape while it moves.
+- Enters at `scale(0.96)` → `1` over 220ms ease-out; leaves in 160ms. The
+  transform origin is the control that opened it (the visit-decision button, the
+  card delete button), not the dialog centre. Never from `scale(0)`: an element
+  should keep a visible shape while it moves.
 - The dialog repeats the address it is acting on. A confirmation that does not
   name its subject makes the user cancel to check.
+- The saved decision records the incident window (date range and radius) it came
+  from, but the dialog does not repeat it.
 - Destructive actions are on the right of `.dialog-actions`; Cancel is
   `secondary` on the left, and the two are separated by 10px, never adjacent with
   equal weight.
@@ -101,6 +114,9 @@ One toast, bottom left, announcing a save. `role="status"`, so it is announced
 without stealing focus.
 
 - 13px, 14/16px padding, `--ring-raised` + `--shadow-toast`, glyph in `--success`.
+  The ring holds the edge; the ambient layer is wider and softer than a
+  control's (`0 8px 26px -8px` at 18%), so the toast separates from the map
+  without a real border and still reads as a light card on a white page.
 - Enters from `translateY(16px)` over 220ms ease-out; leaves towards it by 8px
   in 160ms on an accelerating curve. The exit is quieter than the enter because
   attention has already moved on.
@@ -127,19 +143,20 @@ over imagery rather than over a surface.
 
 ## Empty and status states
 
-`.empty-overview` (no apartments saved) is the model for all of them: a region
-with 44/32px padding, a 18px heading, one 14px sentence capped at 42ch, and the
-next action as a `primary` button.
+`.empty-overview` (no Chicago Places saved) is the model for all of them: a
+region with 44/32px padding, a 18px heading, one 14px sentence capped at 42ch,
+and the next action as a `primary` button.
 
 ```html
 <section class="empty-overview">
-  <h2>No apartments saved yet</h2>
-  <p>Add an apartment you are considering to find nearby reported incidents.</p>
-  <button class="button primary" data-action="add">…Add apartment</button>
+  <h2>No Chicago Place to be saved yet</h2>
+  <p>Add a Chicago Place you are considering to find nearby reported incidents.</p>
+  <button class="button primary" data-action="add">…Add Chicago Place</button>
 </section>
 ```
 
 Rules: name the state, say what to do next, and put the button in the block.
-`No apartments saved yet` plus a button, never `No results`. `.records-empty`
-and `.data-notice` are the same idea at smaller sizes (16px heading, 13px
-body; 12px muted note in `.data-notice`).
+`No Chicago Place to be saved yet` plus a button, never `No results`. The
+heading uses `text-wrap: pretty` so a narrow phone does not leave one orphaned
+word. `.records-empty` and `.data-notice` are the same idea at smaller sizes
+(16px heading, 13px body; 12px muted note in `.data-notice`).

@@ -12,6 +12,7 @@
     <title>ChiStay</title>
   </head>
   <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <header class="topbar">
       <button class="brand" data-action="overview">ChiStay</button>
     </header>
@@ -26,30 +27,40 @@
           </svg>
           <span>Overview</span>
         </button>
-        <button id="nav-add" class="nav-item" data-action="add">
+        <button id="nav-add" class="nav-item" data-action="add" aria-label="Add Chicago Place">
           <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="-1 -1 14 14" aria-hidden="true">
             <path d="M6 0C9.314 0 12 2.686 12 6C12 9.314 9.314 12 6 12C2.686 12 0 9.314 0 6C0 2.686 2.686 0 6 0ZM6 3C5.586 3 5.25 3.336 5.25 3.75V5.25H3.75C3.336 5.25 3 5.586 3 6C3 6.414 3.336 6.75 3.75 6.75H5.25V8.25C5.25 8.664 5.586 9 6 9C6.414 9 6.75 8.664 6.75 8.25V6.75H8.25C8.664 6.75 9 6.414 9 6C9 5.586 8.664 5.25 8.25 5.25H6.75V3.75C6.75 3.336 6.414 3 6 3Z" fill="currentColor" />
           </svg>
-          <span>Add apartment</span>
+          <span class="nav-label nav-label-full">Add Chicago Place</span>
+          <span class="nav-label nav-label-short" aria-hidden="true">Add place</span>
+        </button>
+        <button id="nav-compare" class="nav-item" data-action="compare">
+          <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
+            <path opacity="0.4" d="M10.2501 6H15.2501C15.6641 6 16.0001 5.664 16.0001 5.25C16.0001 4.836 15.6641 4.5 15.2501 4.5H10.2501C9.83612 4.5 9.50012 4.836 9.50012 5.25C9.50012 5.664 9.83612 6 10.2501 6Z" fill="currentColor" />
+            <path opacity="0.4" d="M15.2501 12H10.2501C9.83612 12 9.50012 12.336 9.50012 12.75C9.50012 13.164 9.83612 13.5 10.2501 13.5H15.2501C15.6641 13.5 16.0001 13.164 16.0001 12.75C16.0001 12.336 15.6641 12 15.2501 12Z" fill="currentColor" />
+            <path d="M6.25012 2H3.75012C2.78362 2 2.00012 2.7835 2.00012 3.75V6.25C2.00012 7.2165 2.78362 8 3.75012 8H6.25012C7.21662 8 8.00012 7.2165 8.00012 6.25V3.75C8.00012 2.7835 7.21662 2 6.25012 2Z" fill="currentColor" />
+            <path d="M6.25012 10H3.75012C2.78362 10 2.00012 10.7835 2.00012 11.75V14.25C2.00012 15.2165 2.78362 16 3.75012 16H6.25012C7.21662 16 8.00012 15.2165 8.00012 14.25V11.75C8.00012 10.7835 7.21662 10 6.25012 10Z" fill="currentColor" />
+          </svg>
+          <span>Compare</span>
         </button>
       </nav>
 
-      <main id="main" class="main">
+      <main id="main" class="main" tabindex="-1">
         <section id="screen-overview">
           <div class="page-heading shortlist-heading">
-            <h1>Your apartment shortlist</h1>
+            <h1>Your Chicago Places</h1>
             <!-- Explains the order the cards are shown in -->
             <span class="sort-label" id="overview-sort" hidden>Worth a visit first</span>
           </div>
-          <!-- Saved apartments are added here by main.js -->
+          <!-- Saved Chicago Places are added here by main.js -->
           <div class="cards" id="apartment-list"></div>
           <!-- Shown when nothing is saved yet -->
           <section class="empty-overview" id="overview-empty" hidden>
-            <h2>No apartments saved yet</h2>
-            <p>Add an apartment you are considering to find nearby reported incidents.</p>
+            <h2>No Chicago Place to be saved yet</h2>
+            <p>Add a Chicago Place you are considering to find nearby reported incidents.</p>
             <button class="button primary" data-action="add">
               <span class="local-icon" data-icon="add-apartment" data-size="18" aria-hidden="true"></span>
-              Add apartment
+              Add Chicago Place
             </button>
           </section>
         </section>
@@ -82,13 +93,16 @@
                   </div>
                   <div>
                     <label for="housing-type">Housing type <span class="muted">(optional)</span></label>
-                    <select id="housing-type" name="housingType">
-                      <option value="">Select type</option>
-                      <option>Studio</option>
-                      <option>1 bedroom</option>
-                      <option>2+ bedrooms</option>
-                      <option>Shared bedroom</option>
-                    </select>
+                    <div class="select-wrap">
+                      <select id="housing-type" name="housingType">
+                        <option value="">Select type</option>
+                        <option>Studio</option>
+                        <option>1 bedroom</option>
+                        <option>2+ bedrooms</option>
+                        <option>Shared bedroom</option>
+                      </select>
+                      <span class="local-icon select-caret" data-icon="chevron-right" data-size="14" aria-hidden="true"></span>
+                    </div>
                   </div>
                 </div>
 
@@ -114,30 +128,30 @@
               </div>
             </section>
 
-            <section class="verify-map map-frame" aria-label="Apartment location map">
+            <section class="verify-map map-frame" aria-label="Chicago Place location map">
               <div id="verify-map" class="map"></div>
             </section>
           </div>
         </section>
 
-        <!-- Incidents near apartment -->
+        <!-- Incidents near the selected Chicago Place -->
         <section id="screen-explore" hidden>
           <div class="page-heading explore-heading">
             <div>
-              <h1>Reported incidents near this apartment</h1>
+              <h1>Reported incidents nearby</h1>
               <p class="heading-subtitle">
                 <span id="explore-address"></span>
               </p>
             </div>
             <button class="button primary" id="save-button" data-action="save-dialog">
-              <span id="save-button-label">Save apartment</span>
+              <span id="save-button-label">Visit decision</span>
             </button>
           </div>
 
           <!-- Filters -->
           <section class="filters" aria-label="Incident filters">
             <fieldset class="filter-group radius-group">
-              <legend>Radius from apartment</legend>
+              <legend>Radius from Chicago Place</legend>
               <div class="segments">
                 <button type="button" data-action="radius" data-radius="0.25" aria-pressed="false">0.25 mi</button>
                 <button type="button" data-action="radius" data-radius="0.5" class="selected" aria-pressed="true">0.5 mi</button>
@@ -158,7 +172,10 @@
                   aria-labelledby="date-label date-summary"
                 >
                   <span id="date-summary">Select a date range</span>
-                  <span class="local-icon" data-icon="calendar" data-size="16" aria-hidden="true"></span>
+                  <span class="date-field-icons" aria-hidden="true">
+                    <span class="local-icon" data-icon="calendar" data-size="16"></span>
+                    <span class="local-icon date-caret" data-icon="chevron-right" data-size="14"></span>
+                  </span>
                 </button>
 
                 <div class="date-panel" id="date-panel" hidden>
@@ -198,9 +215,12 @@
 
             <div class="filter-group category-group">
               <label for="category">Categories</label>
-              <select id="category">
-                <option value="">All categories</option>
-              </select>
+              <div class="select-wrap">
+                <select id="category">
+                  <option value="">All categories</option>
+                </select>
+                <span class="local-icon select-caret" data-icon="chevron-right" data-size="14" aria-hidden="true"></span>
+              </div>
             </div>
 
             <button class="button secondary reset-button" data-action="reset">
@@ -300,10 +320,24 @@
             </div>
           </div>
         </section>
+
+        <!-- Compare all saved places -->
+        <section id="screen-compare" hidden>
+          <div class="page-heading">
+            <div>
+              <h1>Compare Chicago Places in 10 days</h1>
+              <p class="heading-subtitle">
+                <span id="compare-window" role="status"></span>
+              </p>
+            </div>
+          </div>
+          <!-- main.js switches between loading, empty, and the band list -->
+          <div id="compare-body"></div>
+        </section>
       </main>
     </div>
 
-    <!-- Toast message (hidden until an apartment is saved) -->
+    <!-- Toast message (hidden until a Chicago Place is saved) -->
     <div class="toast" id="toast" role="status" aria-live="polite" hidden>
       <span class="local-icon" data-icon="saved" data-size="24" aria-hidden="true"></span>
       <span id="toast-message"></span>
@@ -312,7 +346,7 @@
     <!-- Dialogs. main.js fills in the address and calls showModal(). -->
     <dialog id="save-dialog" class="dialog" aria-labelledby="save-dialog-title">
       <div class="dialog-header">
-        <h2 id="save-dialog-title">Save apartment</h2>
+        <h2 id="save-dialog-title">Visit decision</h2>
         <button class="icon-button" data-action="close-dialog" aria-label="Close" title="Close">
           <span class="local-icon" data-icon="x" data-size="20" aria-hidden="true"></span>
         </button>
@@ -324,18 +358,18 @@
       </div>
 
       <button class="save-choice" data-action="save" data-decision="worth">
-        <span>Save as worth a visit</span>
+        <span>Worth a visit</span>
         <span class="local-icon" data-icon="bookmark" data-size="18" aria-hidden="true"></span>
       </button>
 
       <button class="save-secondary" data-action="save" data-decision="undecided">
-        Save without a decision
+        Keep deciding
       </button>
     </dialog>
 
     <dialog id="delete-dialog" class="dialog dialog-small" aria-labelledby="delete-dialog-title">
       <div class="dialog-header">
-        <h2 id="delete-dialog-title">Delete apartment?</h2>
+        <h2 id="delete-dialog-title">Delete Chicago Place?</h2>
         <button class="icon-button" data-action="close-dialog" aria-label="Close" title="Close">
           <span class="local-icon" data-icon="x" data-size="20" aria-hidden="true"></span>
         </button>
@@ -345,15 +379,15 @@
 
       <div class="dialog-actions">
         <button class="button secondary" data-action="close-dialog">Cancel</button>
-        <button class="button danger" data-action="confirm-delete">Delete apartment</button>
+        <button class="button danger" data-action="confirm-delete">Delete Chicago Place</button>
       </div>
     </dialog>
 
     <dialog id="card-sheet" class="card-sheet" aria-labelledby="card-sheet-title">
       <div class="card-sheet-handle" aria-hidden="true"></div>
-      <h2 id="card-sheet-title" class="sr-only">Apartment actions</h2>
-      <button class="icon-button bordered" data-action="sheet-delete" aria-label="Delete apartment" title="Delete apartment"></button>
-      <p class="card-sheet-label" aria-hidden="true">Delete apartment</p>
+      <h2 id="card-sheet-title" class="sr-only">Chicago Place actions</h2>
+      <button class="icon-button bordered" data-action="sheet-delete" aria-label="Delete Chicago Place" title="Delete Chicago Place"></button>
+      <p class="card-sheet-label" aria-hidden="true">Delete Chicago Place</p>
     </dialog>
 
     <template id="apartment-card-template">
@@ -376,7 +410,7 @@
         <div class="card-actions">
           <button class="button primary" data-action="open-apartment">View nearby incidents</button>
           <div class="card-tray" data-field="tray">
-            <button class="icon-button bordered" data-action="delete-apartment" aria-label="Delete apartment" title="Delete apartment"></button>
+            <button class="icon-button bordered" data-action="delete-apartment" aria-label="Delete Chicago Place" title="Delete Chicago Place"></button>
           </div>
         </div>
       </article>

@@ -3,6 +3,7 @@ import csvUrl from "../Crimes_20261029.csv?url";
 import {
   defaultFilters,
   filterIncidents,
+  filtersForDays,
   formatDay,
   prepareIncidents,
   titleCase,
@@ -20,10 +21,12 @@ const screens = {
   overview: document.querySelector("#screen-overview"),
   verify: document.querySelector("#screen-verify"),
   explore: document.querySelector("#screen-explore"),
+  compare: document.querySelector("#screen-compare"),
 };
 
 const navOverview = document.querySelector("#nav-overview");
 const navAdd = document.querySelector("#nav-add");
+const navCompare = document.querySelector("#nav-compare");
 
 const toast = document.querySelector("#toast");
 const toastMessage = document.querySelector("#toast-message");
@@ -34,6 +37,103 @@ let toastTimer;
 // This is the only place that remembers what the user is doing.
 const storageKey = "chistay-apartments-v1";
 const savedLocations = new Map();
+
+const STREET_SUFFIXES = {
+  street: "st",
+  avenue: "ave",
+  road: "rd",
+  boulevard: "blvd",
+  drive: "dr",
+  place: "pl",
+  court: "ct",
+  lane: "ln",
+  terrace: "ter",
+  parkway: "pkwy",
+  circle: "cir",
+  highway: "hwy",
+  square: "sq",
+  trail: "trl",
+  saint: "st",
+};
+const DIRECTION_WORDS = {
+  north: "n",
+  south: "s",
+  east: "e",
+  west: "w",
+};
+const ORDINAL_WORDS = {
+  first: "1st",
+  second: "2nd",
+  third: "3rd",
+  fourth: "4th",
+  fifth: "5th",
+  sixth: "6th",
+  seventh: "7th",
+  eighth: "8th",
+  ninth: "9th",
+  tenth: "10th",
+};
+
+// Mapbox can return "925 W Taylor St, Chicago, IL" and "925 West Taylor
+// Street, Chicago 60612" for the same building. Compare a normalized key so
+// the shortlist keeps one card, while the saved label stays as first seen.
+function normalizeAddress(address) {
+  let text = String(address || "").toLowerCase();
+  text = text.replace(/[.,]/g, " ");
+  text = text.replace(/\b(chicago|illinois|il|usa|united states)\b/g, " ");
+  text = text.replace(/\b\d{5}(?:-\d{4})?\b/g, " ");
+  text = text.replace(/\b(north|south|east|west)\b/g, (word) => {
+    return DIRECTION_WORDS[word];
+  });
+  text = text.replace(/\b(street|avenue|road|boulevard|drive|place|court|lane|terrace|parkway|circle|highway|square|trail|saint)\b/g, (word) => {
+    return STREET_SUFFIXES[word];
+  });
+  text = text.replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/g, (word) => {
+    return ORDINAL_WORDS[word];
+  });
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function findApartmentIndex(address) {
+  const key = normalizeAddress(address);
+  return state.apartments.findIndex((saved) => {
+    return normalizeAddress(saved.address) === key;
+  });
+}
+
+// Older storage can contain two labels for one address. Keep the first
+// occurrence and merge the fields the user may have set on either copy.
+function mergeDuplicateApartments(apartments) {
+  const indexByAddress = new Map();
+  const merged = [];
+
+  apartments.forEach((apartment) => {
+    const key = normalizeAddress(apartment.address);
+    const existingIndex = indexByAddress.get(key);
+
+    if (existingIndex === undefined) {
+      indexByAddress.set(key, merged.length);
+      merged.push(apartment);
+      return;
+    }
+
+    const existing = merged[existingIndex];
+    merged[existingIndex] = {
+      ...existing,
+      rent: existing.rent || apartment.rent,
+      housingType: existing.housingType || apartment.housingType,
+      decision:
+        existing.decision === "worth" || apartment.decision === "worth"
+          ? "worth"
+          : existing.decision || apartment.decision || "undecided",
+      latitude: Number.isFinite(existing.latitude) ? existing.latitude : apartment.latitude,
+      longitude: Number.isFinite(existing.longitude) ? existing.longitude : apartment.longitude,
+      filters: existing.filters || apartment.filters,
+    };
+  });
+
+  return merged;
+}
 
 const state = {
   screen: "overview",
@@ -57,9 +157,18 @@ function loadApartments() {
     if (!Array.isArray(saved)) {
       return [];
     }
-    return saved.filter((item) => {
+    const cleaned = saved.filter((item) => {
       return item && typeof item.address === "string";
     });
+    const merged = mergeDuplicateApartments(cleaned);
+    if (merged.length !== cleaned.length) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(merged));
+      } catch {
+        // Keep the in-memory merge; the next successful save will persist it.
+      }
+    }
+    return merged;
   } catch {
     // If the saved text is not valid JSON we start with an empty list.
     return [];
@@ -74,6 +183,60 @@ function persistApartments() {
     state.toast = "Unable to save on this device. Check browser storage settings.";
     return false;
   }
+}
+
+// A saved place can answer the radius filter only once it has coordinates.
+// Places added from an address search get them immediately; older saved items
+// pick them up the first time they are opened or compared.
+function hasLocation(place) {
+  return Number.isFinite(place.latitude) && Number.isFinite(place.longitude);
+}
+
+// A confirmed address belongs on the list right away, without waiting for the
+// visit-decision dialog. Re-finding an address updates its details but keeps
+// the decision the user already made.
+function rememberApartment(apartment, match) {
+  const addressKey = normalizeAddress(apartment.address);
+  const previous = [...state.apartments];
+  const existingIndex = findApartmentIndex(apartment.address);
+
+  let added = false;
+
+  if (existingIndex === -1) {
+    state.apartments.push({
+      ...apartment,
+      decision: "undecided",
+      latitude: match.latitude,
+      longitude: match.longitude,
+    });
+    added = true;
+  } else {
+    const existing = state.apartments[existingIndex];
+    state.apartments[existingIndex] = {
+      ...existing,
+      rent: apartment.rent || existing.rent,
+      housingType: apartment.housingType || existing.housingType,
+      latitude: match.latitude,
+      longitude: match.longitude,
+    };
+  }
+
+  if (!persistApartments()) {
+    state.apartments = previous;
+    showToast(state.toast);
+    return false;
+  }
+
+  savedLocations.set(addressKey, match);
+  renderOverview();
+
+  if (added) {
+    state.toast = "Chicago Place added to your shortlist";
+    showToast(state.toast);
+    hideToastLater();
+  }
+
+  return added;
 }
 
 // Small helpers used when building text and markup
@@ -143,12 +306,18 @@ function showScreen(name) {
   screens.overview.hidden = name !== "overview";
   screens.verify.hidden = name !== "verify";
   screens.explore.hidden = name !== "explore";
+  screens.compare.hidden = name !== "compare";
 
   markNav(navOverview, name === "overview");
   markNav(navAdd, name === "verify" || name === "explore");
+  markNav(navCompare, name === "compare");
 
   showToast(state.toast);
   startMap();
+
+  if (name === "compare") {
+    renderCompare();
+  }
 
   if (screenChanged) {
     const heading = screens[name].querySelector("h1");
@@ -163,6 +332,18 @@ function showToast(message) {
   toast.classList.remove("is-expiring");
   toastMessage.textContent = message || "";
   toast.hidden = !message;
+}
+
+// The toast is shown immediately, then removed on a timer that outlasts the
+// exit animation. Any screen change calls showToast() and clears the timer, so
+// callers set this again after the screen has settled.
+function hideToastLater() {
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    state.toast = "";
+    toast.classList.add("is-expiring");
+    toast.hidden = true;
+  }, 5000);
 }
 
 // Screen 1 - apartment shortlist
@@ -188,6 +369,40 @@ function renderOverview() {
   orderForShortlist(state.apartments).forEach((entry) => {
     list.append(apartmentCard(entry.apartment, entry.index));
   });
+}
+
+// A place's saved visit-decision window is still restored when the place is
+// reopened in the Explore filters. The overview card itself shows no count.
+function hasSavedIncidentFilters(apartment) {
+  const saved = apartment.filters;
+  return Boolean(saved && saved.startDay && saved.endDay);
+}
+
+function placeIncidentFilters(apartment, fallback) {
+  if (!hasSavedIncidentFilters(apartment)) {
+    return fallback;
+  }
+
+  const saved = apartment.filters;
+  const radius = Number(saved.radius);
+  return {
+    radius: Number.isFinite(radius) ? radius : fallback.radius,
+    startDay: saved.startDay,
+    endDay: saved.endDay,
+    // The category control is a view filter, not part of the saved decision.
+    category: "",
+  };
+}
+
+function decisionFilters(filters) {
+  if (!filters || !filters.startDay || !filters.endDay) {
+    return null;
+  }
+  return {
+    radius: Number(filters.radius),
+    startDay: filters.startDay,
+    endDay: filters.endDay,
+  };
 }
 
 // How the shortlist is ordered
@@ -379,6 +594,25 @@ function readForm() {
   };
 }
 
+// Re-finding a saved address with the optional fields blank must not erase the
+// rent, housing type, coordinates or visit decision already saved for it.
+function mergeFormWithSaved(values) {
+  const existingIndex = findApartmentIndex(values.address);
+
+  if (existingIndex === -1) {
+    return values;
+  }
+
+  const existing = state.apartments[existingIndex];
+  return {
+    ...existing,
+    ...values,
+    address: existing.address,
+    rent: values.rent || existing.rent,
+    housingType: values.housingType || existing.housingType,
+  };
+}
+
 // The address Mapbox confirmed replaces the text that was typed, so the saved
 // apartment carries the full street address instead of a fragment of it. The
 // country and state are dropped: every match shares them. Rent and housing type
@@ -430,6 +664,9 @@ async function searchAddress(apartment) {
     state.matches = matches;
     state.match = matches.length === 1 ? matches[0] : null;
     state.apartment = confirmAddress(apartment, state.match);
+    if (state.match) {
+      rememberApartment(state.apartment, state.match);
+    }
     renderMatches();
     startMap();
   } catch (problem) {
@@ -452,20 +689,14 @@ async function searchAddress(apartment) {
 function renderExplore() {
   const apartment = state.apartment;
 
-  const alreadySaved = state.apartments.some((saved) => {
-    return saved.address.toLowerCase() === apartment.address.toLowerCase();
-  });
-
   document.querySelector("#explore-address").textContent = apartment.address;
 
-  // A saved apartment has nothing left to save, so the button reports that
-  // instead of offering to save it again.
+  // The place is added as soon as an address is confirmed, so this button now
+  // records the visit decision. It stays available so the decision can change.
   const saveButton = document.querySelector("#save-button");
-  saveButton.disabled = alreadySaved;
-  saveButton.title = alreadySaved ? "This apartment is already saved" : "";
-  document.querySelector("#save-button-label").textContent = alreadySaved
-    ? "Saved"
-    : "Save apartment";
+  saveButton.disabled = false;
+  saveButton.title = "";
+  document.querySelector("#save-button-label").textContent = "Visit decision";
 
   fillFilters();
   fillDataNotice();
@@ -708,13 +939,47 @@ function openDatePanel() {
   fillPickerSelects();
   renderDateGrid();
 
-  document.querySelector("#date-panel").hidden = false;
-  document.querySelector("#date-toggle").setAttribute("aria-expanded", "true");
+  const panel = document.querySelector("#date-panel");
+  const trigger = document.querySelector("#date-toggle");
+  panel.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  positionDatePanel(panel, trigger);
+}
+
+// The panel opens below the field unless there is not enough room, then above.
+// The caret points at it either way.
+function positionDatePanel(panel, trigger) {
+  panel.classList.remove("is-above");
+  trigger.classList.remove("is-above");
+
+  const triggerBox = trigger.getBoundingClientRect();
+  const panelHeight = panel.offsetHeight;
+  const spaceBelow = window.innerHeight - triggerBox.bottom;
+  const spaceAbove = triggerBox.top;
+  const openAbove = spaceBelow < panelHeight + 12 && spaceAbove >= panelHeight + 12;
+
+  panel.classList.toggle("is-above", openAbove);
+  trigger.classList.toggle("is-above", openAbove);
+
+  const panelBox = panel.getBoundingClientRect();
+  panel.style.setProperty(
+    "--picker-origin-x",
+    `${triggerBox.left + triggerBox.width / 2 - panelBox.left}px`,
+  );
+  panel.style.setProperty("--picker-origin-y", openAbove ? `${panelBox.height}px` : "0px");
+  panel.style.setProperty("--picker-enter-y", openAbove ? "4px" : "-4px");
 }
 
 function closeDatePanel() {
-  document.querySelector("#date-panel").hidden = true;
-  document.querySelector("#date-toggle").setAttribute("aria-expanded", "false");
+  const panel = document.querySelector("#date-panel");
+  const trigger = document.querySelector("#date-toggle");
+  panel.hidden = true;
+  panel.classList.remove("is-above");
+  panel.style.removeProperty("--picker-origin-x");
+  panel.style.removeProperty("--picker-origin-y");
+  panel.style.removeProperty("--picker-enter-y");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.classList.remove("is-above");
 }
 
 function shiftPickerMonth(step) {
@@ -887,7 +1152,7 @@ function startMap() {
     state.map = null;
   }
 
-  if (state.screen === "overview") {
+  if (state.screen === "overview" || state.screen === "compare") {
     return;
   }
 
@@ -917,13 +1182,413 @@ function startMap() {
   }
 }
 
+// Screen 4 - compare all saved places
+//
+// Every place uses the same short window, radius and category filter, so the
+// daily bars and totals can be read against each other. The full incident list
+// stays on the place's own screen; this screen is the comparison.
+const COMPARE_DAYS = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
+let compareToken = 0;
+
+// Ten start dates for the 10-day window, one day apart.
+function dayStarts(filters) {
+  const firstDay = Date.parse(`${filters.startDay}T00:00:00Z`);
+  const lastDay = Date.parse(`${filters.endDay}T00:00:00Z`);
+  const starts = [];
+
+  for (let offset = 0; firstDay + offset * DAY_MS <= lastDay; offset += 1) {
+    starts.push(new Date(firstDay + offset * DAY_MS).toISOString().slice(0, 10));
+  }
+
+  return starts;
+}
+
+function dailyCounts(incidents, filters, starts) {
+  const firstDay = Date.parse(`${filters.startDay}T00:00:00Z`);
+  const counts = new Array(starts.length).fill(0);
+
+  incidents.forEach((incident) => {
+    const day = Date.parse(`${incident.date.day}T00:00:00Z`);
+    const index = Math.floor((day - firstDay) / DAY_MS);
+    if (index >= 0 && index < counts.length) {
+      counts[index] += 1;
+    }
+  });
+
+  return counts;
+}
+
+function categoryTotals(incidents) {
+  const counts = new Map();
+
+  incidents.forEach((incident) => {
+    counts.set(incident.category, (counts.get(incident.category) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((first, second) => {
+      return second.count - first.count || first.category.localeCompare(second.category);
+    });
+}
+
+function compareMeta(apartment) {
+  const rent = apartment.rent
+    ? formatRent(apartment.rent)
+    : "Rent not added";
+  const housing = apartment.housingType
+    ? `<span>${escapeHtml(apartment.housingType)}</span>`
+    : "";
+  const decision = apartment.decision === "worth"
+    ? `<span class="decision">${icon("worth-a-visit", 16)}<span>Worth a visit</span></span>`
+    : '<span class="compare-decision-quiet">Still deciding</span>';
+
+  return `<p class="compare-place-meta">${decision}<span>${rent}</span>${housing}</p>`;
+}
+
+// Bars are measured against the busiest day in any place, not against the
+// place's own peak, so equal height means an equal number of incidents.
+function compareBars(counts, maxDay, starts) {
+  const bars = counts
+    .map((count, index) => {
+      const height = Math.max(3, Math.round((count / maxDay) * 44));
+      const day = formatDay(starts[index], { month: "short", day: "numeric" });
+      const noun = count === 1 ? "incident" : "incidents";
+      return `<span class="compare-bar" style="height: ${height}px" title="${count} ${noun} on ${day}"></span>`;
+    })
+    .join("");
+
+  // The bars are one image to assistive technology; its label carries the
+  // exact daily counts, which the hover titles cannot reach from a keyboard.
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  const peak = counts.length ? Math.max(...counts) : 0;
+  const series = counts
+    .map((count, index) => {
+      const day = formatDay(starts[index], { month: "short", day: "numeric" });
+      return `${day}: ${count}`;
+    })
+    .join(", ");
+  const totalNoun = total === 1 ? "incident" : "incidents";
+  const peakNoun = peak === 1 ? "incident" : "incidents";
+  const label = `${total} ${totalNoun} across ${counts.length} days. Daily counts: ${series}. Busiest day: ${peak} ${peakNoun}.`;
+
+  return `<div class="compare-bars" role="img" aria-label="${escapeHtml(label)}">${bars}</div>`;
+}
+
+function compareRecent(incidents) {
+  return incidents
+    .slice(0, 3)
+    .map((incident) => {
+      return `
+        <li class="compare-record">
+          <span class="crime-icon">${incidentIcon(incident.category)}</span>
+          <span class="record-copy">
+            <strong>${escapeHtml(titleCase(incident.category))}</strong>
+            <span>${escapeHtml(titleCase(incident.block))}</span>
+          </span>
+          <time datetime="${incident.date.day}">${formatDay(incident.date.day, {
+            month: "short",
+            day: "numeric",
+          })}</time>
+        </li>
+      `;
+    })
+    .join("");
+}
+
+function compareBand(place, starts, maxDay, filters) {
+  const headingId = `compare-place-${place.index}`;
+  const openButton = `
+    <button class="text-button compare-open" data-action="open-compare-place" data-index="${place.index}">
+      View all incidents
+    </button>
+  `;
+
+  if (!place.location) {
+    return `
+      <article class="compare-band compare-band-broken" aria-labelledby="${headingId}">
+        <div class="compare-place">
+          <h3 id="${headingId}">${escapeHtml(place.apartment.address)}</h3>
+          ${compareMeta(place.apartment)}
+          ${openButton}
+        </div>
+        <p class="compare-band-error">We could not place this address. View its incidents to try again.</p>
+      </article>
+    `;
+  }
+
+  const top = categoryTotals(place.incidents).slice(0, 3);
+  const topMarkup = top.length
+    ? top
+      .map(({ category, count }) => {
+        return `<span>${escapeHtml(titleCase(category))} <strong>${count.toLocaleString("en-US")}</strong></span>`;
+      })
+      .join('<span class="compare-dot" aria-hidden="true">·</span>')
+    : "No incidents in this window";
+
+  const peak = place.days.length ? Math.max(...place.days) : 0;
+  const peakNoun = peak === 1 ? "incident" : "incidents";
+  const caption = peak > 0
+    ? `Busiest day: ${peak.toLocaleString("en-US")} ${peakNoun}`
+    : "No incidents in this window";
+
+  const recentLabel = place.total > 0
+    ? `${Math.min(3, place.total).toLocaleString("en-US")} newest of ${place.total.toLocaleString("en-US")}`
+    : "No incidents";
+  const recentMarkup = place.total > 0
+    ? `<ul class="compare-records">${compareRecent(place.incidents)}</ul>`
+    : '<p class="compare-empty-line">No incidents in this window.</p>';
+
+  return `
+    <article class="compare-band" aria-labelledby="${headingId}">
+      <div class="compare-place">
+        <h3 id="${headingId}">${escapeHtml(place.apartment.address)}</h3>
+        ${compareMeta(place.apartment)}
+        <p class="compare-total">
+          <strong>${place.total.toLocaleString("en-US")}</strong>
+          <span>${place.total === 1 ? "incident" : "incidents"} in ${starts.length} days</span>
+        </p>
+        <p class="compare-top">${topMarkup}</p>
+        ${openButton}
+      </div>
+
+      <div class="compare-days">
+        ${compareBars(place.days, maxDay, starts)}
+        <div class="compare-axis" aria-hidden="true">
+          <span>${formatDay(filters.startDay, { month: "short", day: "numeric" })}</span>
+          <span>${formatDay(filters.endDay, { month: "short", day: "numeric" })}</span>
+        </div>
+        <p class="compare-caption">${caption}</p>
+      </div>
+
+      <div class="compare-recent">
+        <p class="compare-label">${recentLabel}</p>
+        ${recentMarkup}
+      </div>
+    </article>
+  `;
+}
+
+function compareMarkup(places, filters, starts, maxDay) {
+  const bands = places
+    .map((place) => compareBand(place, starts, maxDay, filters))
+    .join("");
+
+  return `
+    <section class="compare-panel" aria-labelledby="compare-panel-title">
+      <!-- The visible title is the page heading above; this keeps the section
+           named without repeating the title and description. -->
+      <h2 id="compare-panel-title" class="sr-only">Chicago Places, one after another</h2>
+
+      <div class="compare-band-head" aria-hidden="true">
+        <span>Chicago Place</span>
+        <span>Daily incidents</span>
+        <span>Newest incidents</span>
+      </div>
+
+      ${bands}
+    </section>
+  `;
+}
+
+// A saved place with coordinates is ready to compare. An older saved item
+// without them is geocoded once; the result is kept in the session cache and
+// written back to the saved list.
+async function locateApartment(apartment) {
+  if (hasLocation(apartment)) {
+    return {
+      label: apartment.address,
+      latitude: apartment.latitude,
+      longitude: apartment.longitude,
+    };
+  }
+
+  const addressKey = normalizeAddress(apartment.address);
+  const cached = savedLocations.get(addressKey);
+  if (cached) {
+    return cached;
+  }
+
+  const matches = await findAddress(apartment.address);
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const exact = matches.find((match) => {
+    return normalizeAddress(shortLabel(match.label)) === addressKey;
+  });
+  const match = exact || matches[0];
+  savedLocations.set(addressKey, match);
+  return match;
+}
+
+async function collectCompareEntries() {
+  // Same order as the shortlist: worth a visit first, then lowest rent. The
+  // saved index still travels with each entry so its action finds the place.
+  const entries = orderForShortlist(state.apartments).map(({ apartment, index }) => {
+    return { apartment, index };
+  });
+
+  let changed = false;
+
+  await Promise.all(entries.map(async (entry) => {
+    try {
+      const location = await locateApartment(entry.apartment);
+      entry.location = location;
+
+      if (location && !hasLocation(entry.apartment)) {
+        entry.apartment.latitude = location.latitude;
+        entry.apartment.longitude = location.longitude;
+        changed = true;
+      }
+    } catch {
+      entry.location = null;
+    }
+  }));
+
+  if (changed) {
+    persistApartments();
+    renderOverview();
+  }
+
+  return entries;
+}
+
+// "Jul 24-Oct 21, 2026". The end month is dropped inside one month so the
+// compare subtitle stays short.
+function formatWindowRange(filters) {
+  const startDay = formatDay(filters.startDay, { month: "short", day: "numeric" });
+  const sameMonth = filters.startDay.slice(5, 7) === filters.endDay.slice(5, 7);
+  const endDay = sameMonth
+    ? formatDay(filters.endDay, { day: "numeric" })
+    : formatDay(filters.endDay, { month: "short", day: "numeric" });
+  const year = formatDay(filters.endDay, { year: "numeric" });
+  return `${startDay}-${endDay}, ${year}`;
+}
+
+async function renderCompare() {
+  const token = ++compareToken;
+  const body = document.querySelector("#compare-body");
+  const windowLabel = document.querySelector("#compare-window");
+  const windowRow = windowLabel.closest(".heading-subtitle");
+  const hasPlaces = state.apartments.length > 0;
+  const loadingMarkup = `
+    <section class="form-panel compare-message">
+      <h2>Loading incidents</h2>
+      <p>Reading the supplied incident snapshot for each saved Chicago Place.</p>
+    </section>
+  `;
+  const locatingMarkup = `
+    <section class="form-panel compare-message">
+      <h2>Locating saved places</h2>
+      <p>Finding coordinates for saved places that were added before locations were stored.</p>
+    </section>
+  `;
+  // The subtitle describes the comparison window. With no places there is
+  // nothing to describe; the empty state below carries that message instead.
+  windowRow.hidden = !hasPlaces;
+  windowLabel.textContent = hasPlaces ? "Loading incidents" : "";
+
+  if (state.dataError) {
+    windowLabel.textContent = "Unable to load incidents";
+    body.innerHTML = `
+      <section class="form-panel compare-message">
+        <h2>Unable to load incidents</h2>
+        <p>${escapeHtml(state.dataError)}</p>
+      </section>
+    `;
+    return;
+  }
+
+  if (!state.data) {
+    body.innerHTML = loadingMarkup;
+    return;
+  }
+
+  if (state.apartments.length === 0) {
+    windowRow.hidden = true;
+    windowLabel.textContent = "";
+    body.innerHTML = `
+      <section class="empty-overview">
+        <h2>No Chicago Places to compare yet</h2>
+        <p>Add a Chicago Place you are considering to see its reported incidents here.</p>
+        <button class="button primary" data-action="add">
+          ${icon("add-apartment", 18)}
+          Add Chicago Place
+        </button>
+      </section>
+    `;
+    return;
+  }
+
+  const needsLocation = state.apartments.some((apartment) => !hasLocation(apartment));
+  if (needsLocation) {
+    windowLabel.textContent = "Locating saved places";
+    body.innerHTML = locatingMarkup;
+  } else {
+    body.innerHTML = "";
+  }
+
+  const entries = await collectCompareEntries();
+  if (token !== compareToken || state.screen !== "compare") {
+    return;
+  }
+
+  const filters = filtersForDays(state.data.lastDay, COMPARE_DAYS);
+  const starts = dayStarts(filters);
+  const places = entries.map((entry) => {
+    if (!entry.location) {
+      return { ...entry, incidents: [], total: 0, days: [] };
+    }
+
+    const incidents = filterIncidents(state.data.incidents, entry.location, filters);
+    return {
+      ...entry,
+      incidents,
+      total: incidents.length,
+      days: dailyCounts(incidents, filters, starts),
+    };
+  });
+
+  const maxDay = Math.max(
+    1,
+    ...places.map((place) => {
+      return place.days.length ? Math.max(...place.days) : 0;
+    }),
+  );
+
+  windowLabel.textContent = `${formatWindowRange(filters)} · ${filters.radius} mi`;
+
+  body.innerHTML = compareMarkup(places, filters, starts, maxDay);
+}
+
 // Dialogs
 let pendingDeleteIndex = -1;
 // Where the card sat in the list, so focus can move to the card that takes its
 // place after the list is ordered again.
 let pendingDeletePosition = -1;
 
-function openSaveDialog() {
+function setDialogOrigin(dialog, trigger) {
+  if (!trigger) {
+    dialog.style.removeProperty("--dialog-origin-x");
+    dialog.style.removeProperty("--dialog-origin-y");
+    return;
+  }
+
+  const dialogBox = dialog.getBoundingClientRect();
+  const triggerBox = trigger.getBoundingClientRect();
+  dialog.style.setProperty(
+    "--dialog-origin-x",
+    `${triggerBox.left + triggerBox.width / 2 - dialogBox.left}px`,
+  );
+  dialog.style.setProperty(
+    "--dialog-origin-y",
+    `${triggerBox.top + triggerBox.height / 2 - dialogBox.top}px`,
+  );
+}
+
+function openSaveDialog(trigger) {
   if (!state.apartment) {
     return;
   }
@@ -935,9 +1600,10 @@ function openSaveDialog() {
   rent.hidden = !rent.textContent;
 
   document.querySelector("#save-dialog").showModal();
+  setDialogOrigin(document.querySelector("#save-dialog"), trigger);
 }
 
-function openDeleteDialog(index, position) {
+function openDeleteDialog(index, position, trigger) {
   const apartment = state.apartments[index];
   if (!apartment) {
     return;
@@ -946,7 +1612,93 @@ function openDeleteDialog(index, position) {
   pendingDeleteIndex = index;
   pendingDeletePosition = position;
   document.querySelector("#delete-dialog-address").textContent = apartment.address;
-  document.querySelector("#delete-dialog").showModal();
+  const dialog = document.querySelector("#delete-dialog");
+  dialog.showModal();
+  setDialogOrigin(dialog, trigger);
+}
+
+// Opens a saved place's incident screen. A place with saved coordinates needs
+// no network call; older saved items geocode once and keep the result.
+async function openApartment(index, trigger) {
+  const apartment = state.apartments[index];
+  if (!apartment) {
+    return;
+  }
+
+  const addressKey = normalizeAddress(apartment.address);
+  addressSearchController?.abort();
+  const controller = new AbortController();
+  addressSearchController = controller;
+  state.toast = "";
+  if (trigger) {
+    trigger.disabled = true;
+  }
+
+  let matches = [];
+  try {
+    const cachedMatch = savedLocations.get(addressKey);
+    if (cachedMatch) {
+      matches = [cachedMatch];
+    } else if (hasLocation(apartment)) {
+      matches = [{
+        label: apartment.address,
+        latitude: apartment.latitude,
+        longitude: apartment.longitude,
+      }];
+    } else {
+      matches = await findAddress(apartment.address, controller.signal);
+    }
+  } catch {
+    if (controller.signal.aborted) {
+      return;
+    }
+  } finally {
+    if (trigger) {
+      trigger.disabled = false;
+    }
+    if (addressSearchController === controller) {
+      addressSearchController = null;
+    }
+  }
+  if (controller.signal.aborted) {
+    return;
+  }
+
+  state.apartment = apartment;
+
+  if (matches.length > 1) {
+    const exactMatches = matches.filter((match) => {
+      return normalizeAddress(shortLabel(match.label)) === addressKey;
+    });
+    if (exactMatches.length === 1) {
+      matches = exactMatches;
+    }
+  }
+
+  if (matches.length === 1) {
+    state.match = matches[0];
+    savedLocations.set(addressKey, state.match);
+
+    if (!hasLocation(apartment)) {
+      apartment.latitude = state.match.latitude;
+      apartment.longitude = state.match.longitude;
+      persistApartments();
+    }
+
+    state.selectedId = "";
+    state.filters = placeIncidentFilters(
+      apartment,
+      defaultFilters(state.data ? state.data.lastDay : ""),
+    );
+    renderExplore();
+    showScreen("explore");
+  } else {
+    state.matches = [];
+    state.match = null;
+    renderVerify();
+    showScreen("verify");
+    await searchAddress(apartment);
+  }
 }
 
 document.addEventListener("click", (event) => {
@@ -976,6 +1728,12 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "compare") {
+    state.toast = "";
+    showScreen("compare");
+    return;
+  }
+
   if (action === "add") {
     state.apartment = null;
     state.matches = [];
@@ -986,59 +1744,30 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  if (action === "open-apartment") {
-    const apartment = state.apartments[Number(button.dataset.index)];
-    addressSearchController?.abort();
-    const controller = new AbortController();
-    addressSearchController = controller;
-    state.toast = "";
-    button.disabled = true;
-    let matches = [];
-    try {
-      const cached = savedLocations.get(apartment.address.toLowerCase());
-      matches = cached ? [cached] : await findAddress(apartment.address, controller.signal);
-    } catch {
-      if (controller.signal.aborted) return;
-    } finally {
-      button.disabled = false;
-      if (addressSearchController === controller) addressSearchController = null;
-    }
-    if (controller.signal.aborted) return;
-    state.apartment = apartment;
-    if (matches.length > 1) {
-      const address = apartment.address.toLowerCase();
-      const exactMatches = matches.filter((match) => shortLabel(match.label).toLowerCase() === address);
-      if (exactMatches.length === 1) matches = exactMatches;
-    }
-    if (matches.length === 1) {
-      state.match = matches[0];
-      savedLocations.set(apartment.address.toLowerCase(), state.match);
-      state.selectedId = "";
-      state.filters = defaultFilters(state.data ? state.data.lastDay : "");
-      renderExplore();
-      showScreen("explore");
-    } else {
-      state.matches = [];
-      state.match = null;
-      renderVerify();
-      showScreen("verify");
-      await searchAddress(apartment);
-    }
+  if (action === "open-apartment" || action === "open-compare-place") {
+    await openApartment(Number(button.dataset.index), button);
     return;
   }
 
   if (action === "select-match") {
     state.match = state.matches[Number(button.dataset.index)];
     state.apartment = confirmAddress(readForm(), state.match);
+    if (state.match) {
+      rememberApartment(state.apartment, state.match);
+    }
     renderMatches();
     startMap(); // recentre the map on the address that was picked
     return;
   }
 
   if (action === "explore") {
-    state.apartment = readForm();
+    state.apartment = mergeFormWithSaved(readForm());
     state.selectedId = "";
-    state.filters = defaultFilters(state.data ? state.data.lastDay : "");
+    state.toast = "";
+    state.filters = placeIncidentFilters(
+      state.apartment,
+      defaultFilters(state.data ? state.data.lastDay : ""),
+    );
     renderExplore();
     showScreen("explore");
     return;
@@ -1098,7 +1827,7 @@ document.addEventListener("click", async (event) => {
   }
 
   if (action === "save-dialog") {
-    openSaveDialog();
+    openSaveDialog(button);
     return;
   }
 
@@ -1108,7 +1837,7 @@ document.addEventListener("click", async (event) => {
     const card = button.closest(".apartment-card");
     const cards = Array.from(document.querySelectorAll(".apartment-card"));
     closeCardTray();
-    openDeleteDialog(Number(button.dataset.index), cards.indexOf(card));
+    openDeleteDialog(Number(button.dataset.index), cards.indexOf(card), button);
     return;
   }
 
@@ -1117,7 +1846,7 @@ document.addEventListener("click", async (event) => {
     const cards = Array.from(document.querySelectorAll(".apartment-card"));
     const index = Number(card.querySelector('[data-action="delete-apartment"]').dataset.index);
     closeCardTray({ immediate: true });
-    openDeleteDialog(index, cards.indexOf(card));
+    openDeleteDialog(index, cards.indexOf(card), button);
     return;
   }
 
@@ -1410,12 +2139,29 @@ document.addEventListener("contextmenu", (event) => {
 
 function saveApartment(decision) {
   const previous = [...state.apartments];
-  const apartment = { ...state.apartment, decision };
-  if (state.match) savedLocations.set(apartment.address.toLowerCase(), state.match);
+  const existingIndex = findApartmentIndex(state.apartment.address);
+  const existing = existingIndex === -1 ? null : state.apartments[existingIndex];
 
-  const existingIndex = state.apartments.findIndex((saved) => {
-    return saved.address.toLowerCase() === apartment.address.toLowerCase();
-  });
+  // The place is normally already on the list. Keep the coordinates it was
+  // added with, then let a fresh match win if one exists. The date range and
+  // radius are saved with the decision; the category stays a view filter.
+  const filterSelection = decisionFilters(state.filters) || existing?.filters || null;
+  const apartment = {
+    ...state.apartment,
+    ...(existing ? { address: existing.address } : {}),
+    ...(existing && hasLocation(existing)
+      ? { latitude: existing.latitude, longitude: existing.longitude }
+      : {}),
+    ...(state.match
+      ? { latitude: state.match.latitude, longitude: state.match.longitude }
+      : {}),
+    decision,
+    ...(filterSelection ? { filters: filterSelection } : {}),
+  };
+
+  if (state.match) {
+    savedLocations.set(normalizeAddress(apartment.address), state.match);
+  }
 
   if (existingIndex === -1) {
     state.apartments.push(apartment);
@@ -1427,21 +2173,18 @@ function saveApartment(decision) {
   if (saved) {
     state.toast =
       decision === "worth"
-        ? "Apartment saved as worth a visit"
-        : "Apartment saved";
+        ? "Marked as worth a visit"
+        : "Still deciding";
   } else {
     state.apartments = previous;
   }
 
   document.querySelector("#save-dialog").close();
   renderExplore();
+  renderOverview();
   showScreen("explore");
   if (saved) {
-    toastTimer = setTimeout(() => {
-      state.toast = "";
-      toast.classList.add("is-expiring");
-      toast.hidden = true;
-    }, 5000);
+    hideToastLater();
     document.querySelector('[data-action="radius"][aria-pressed="true"]').focus();
   }
 }
@@ -1598,8 +2341,13 @@ Papa.parse(new URL(csvUrl, window.location.href).href, {
       }
     }
 
+    // Both the overview cards and the compare bands need the parsed incidents.
+    renderOverview();
     if (state.screen === "explore") {
       renderExplore();
+    }
+    if (state.screen === "compare") {
+      renderCompare();
     }
   },
 
@@ -1607,6 +2355,9 @@ Papa.parse(new URL(csvUrl, window.location.href).href, {
     state.dataError = "Check that the crime data file is available and reload the page.";
     if (state.screen === "explore") {
       renderExplore();
+    }
+    if (state.screen === "compare") {
+      renderCompare();
     }
   },
 });
