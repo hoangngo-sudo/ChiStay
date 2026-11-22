@@ -279,10 +279,7 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     await page.locator('#nav-compare').click();
     await page.locator('.compare-panel').waitFor({ state: 'visible' });
     assert.equal(await page.locator('.compare-hint').count(), 0);
-    assert.equal(
-      await page.locator('#compare-window').textContent(),
-      'Oct 12-21, 2026 · 0.5 mi',
-    );
+    assert.equal(await page.locator('#compare-window').isVisible(), false);
     assert.equal(await page.locator('.compare-band').count(), 1);
     assert.equal(await page.locator('.compare-band .compare-bar').count(), 10);
     const compareTotal = await page.locator('.compare-total').evaluate((element) => {

@@ -2074,6 +2074,7 @@ fieldset.filter-group {
   }
   .compare-place .compare-open {
     align-self: flex-start;
+    font-size: 14px;
   }
   .cards {
     grid-template-columns: 1fr;

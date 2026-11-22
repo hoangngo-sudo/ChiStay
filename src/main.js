@@ -1558,7 +1558,8 @@ async function renderCompare() {
     }),
   );
 
-  windowLabel.textContent = `${formatWindowRange(filters)} · ${filters.radius} mi`;
+  windowRow.hidden = true;
+  windowLabel.textContent = "";
 
   body.innerHTML = compareMarkup(places, filters, starts, maxDay);
 }
