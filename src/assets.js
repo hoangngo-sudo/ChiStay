@@ -1,4 +1,5 @@
 import apartmentIllustration from './assets/paper/apartment.svg';
+import cornerMixedUseIllustration from './assets/paper/corner-mixed-use.svg';
 import homicideIcon from './assets/paper/crime-categories/homicide.svg';
 import sexualAssaultIcon from './assets/paper/crime-categories/sexual-assault.svg';
 import robberyIcon from './assets/paper/crime-categories/robbery.svg';
@@ -22,7 +23,14 @@ import resetIcon from './assets/icons/reset.svg?raw';
 import savedIcon from './assets/icons/saved.svg?raw';
 import worthAVisitIcon from './assets/icons/worth-a-visit.svg?raw';
 
-export { apartmentIllustration, stackMarkerIcon };
+export { apartmentIllustration, cornerMixedUseIllustration, stackMarkerIcon };
+
+// A Studio card shows the isometric apartment. Every other housing type
+// (1 bedroom, 2+ bedrooms, Shared bedroom, or none chosen) shows the corner
+// mixed-use building.
+export function illustrationFor(housingType) {
+  return housingType === 'Studio' ? apartmentIllustration : cornerMixedUseIllustration;
+}
 
 // Every icon except the crime categories is inline SVG, so it takes the
 // colour of whatever surrounds it instead of needing one per context.

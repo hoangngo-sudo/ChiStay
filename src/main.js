@@ -10,9 +10,9 @@ import {
 } from "./data.mjs";
 import { createMap, findAddress } from "./map.js";
 import {
-  apartmentIllustration,
   categories,
   icons,
+  illustrationFor,
   incidentIcons,
 } from "./assets.js";
 
@@ -477,7 +477,7 @@ function apartmentCard(apartment, index) {
 
   const worthAVisit = apartment.decision === "worth";
 
-  card.querySelector(".card-building").src = apartmentIllustration;
+  card.querySelector(".card-building").src = illustrationFor(apartment.housingType);
 
   const address = card.querySelector('[data-field="address"]');
   address.textContent = apartment.address;
