@@ -388,6 +388,7 @@ main:focus-visible {
 .card-top h2 {
   margin: 0;
   font-size: 16px;
+  font-weight: 500;
   line-height: 1.4;
   overflow: hidden;
   white-space: nowrap;
@@ -1522,41 +1523,31 @@ fieldset.filter-group {
    bars on a shared scale, then the newest incidents. */
 
 .compare-panel {
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: inset 0 0 0 1px var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .compare-band-head,
 .compare-band {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) 220px minmax(0, 1.1fr);
   gap: 24px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .compare-band-head {
   position: sticky;
-  top: 0;
+  top: 8px;
   z-index: 1;
   padding: 10px 20px;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--radius) var(--radius) 0 0;
-  /* The band head's background covers the panel's inset hairline, so redraw
-     the top and side edges here. */
-  box-shadow:
-    inset 0 1px 0 var(--border),
-    inset 1px 0 0 var(--border),
-    inset -1px 0 0 var(--border);
-  background: var(--surface);
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
 }
 .compare-band {
   align-items: start;
   padding: 18px 20px;
-  border-bottom: 1px solid var(--border);
-}
-.compare-band:last-child {
-  border-bottom: 0;
 }
 .compare-place {
   min-width: 0;
@@ -1608,7 +1599,7 @@ fieldset.filter-group {
 }
 .compare-total span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .compare-top {
   display: flex;
@@ -1630,6 +1621,8 @@ fieldset.filter-group {
 .compare-open {
   margin-top: 8px;
   justify-content: start;
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
@@ -1657,13 +1650,13 @@ fieldset.filter-group {
   gap: 8px;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
 }
 .compare-caption {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
 }
 .compare-recent {
@@ -1672,8 +1665,8 @@ fieldset.filter-group {
 .compare-label {
   margin: 0 0 4px;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 400;
 }
 .compare-records {
   margin: 0;
@@ -1697,7 +1690,7 @@ fieldset.filter-group {
 .compare-record time {
   color: var(--muted);
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .compare-empty-line {
@@ -2031,6 +2024,9 @@ fieldset.filter-group {
   }
 }
 @media (max-width: 560px) {
+  .compare-panel {
+    gap: 12px;
+  }
   /* Show the short add label so Overview / Add / Compare stays one line. */
   .nav-label-full {
     display: none;
@@ -2078,6 +2074,7 @@ fieldset.filter-group {
   }
   .cards {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
   .apartment-card {
     display: flex;

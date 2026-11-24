@@ -350,21 +350,12 @@ function hideToastLater() {
 function renderOverview() {
   const list = document.querySelector("#apartment-list");
   const emptyState = document.querySelector("#overview-empty");
-  const sortLabel = document.querySelector("#overview-sort");
 
   list.innerHTML = "";
 
   const hasApartments = state.apartments.length > 0;
   list.hidden = !hasApartments;
   emptyState.hidden = hasApartments;
-
-  // With one apartment there is no order to explain. When nothing is marked
-  // worth a visit, rent is the only thing ordering the list, so say that.
-  const hasWorthAVisit = state.apartments.some((apartment) => {
-    return decisionRank(apartment) === 0;
-  });
-  sortLabel.textContent = hasWorthAVisit ? "Worth a visit first" : "Cheapest first";
-  sortLabel.hidden = state.apartments.length < 2;
 
   orderForShortlist(state.apartments).forEach((entry) => {
     list.append(apartmentCard(entry.apartment, entry.index));
