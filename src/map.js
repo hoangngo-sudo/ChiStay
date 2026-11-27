@@ -4,15 +4,32 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import campusIcon from "./assets/paper/uic.svg";
 import { incidentIcons, stackMarkerIcon } from "./assets.js";
 import { formatDay, titleCase } from "./data.mjs";
+import {
+  TRANSITION_MS,
+  buildClusters,
+  frameAt,
+  isMoving,
+  nodeRadius,
+  planTransition,
+  settle,
+} from "./clusters.js";
+
+// How far the zoom has to move before the badges are regrouped. Small enough
+// that a scroll-wheel zoom is followed step by step instead of after it ends.
+const ZOOM_STEP = 0.08;
+
+// A click on a numbered cluster zooms in by at most this many levels, up to the
+// limit. At the limit nothing more can separate, so the click lists the reports.
+const CLUSTER_ZOOM_STEP = 3;
+const CLUSTER_ZOOM_LIMIT = 19;
 
 const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || "";
-const CAMPUS = [-87.6505, 41.8719];
+// The Quad, longitude first (Mapbox order).
+const CAMPUS = [-87.64925761348732, 41.871897221206616];
 
-// Mapbox paint values cannot read CSS variables, so these mirror the tokens in
-// style.css: --ink, --primary, --incident and --incident-line.
-const INK = "#21201c";
+// Mapbox paint values cannot read CSS variables, so this mirrors --primary in
+// style.css. The incident badges are DOM, styled from the tokens directly.
 const PRIMARY = "#21201c";
-const INCIDENT = "#f2c94c";
 
 export async function findAddress(address, signal) {
   if (!mapboxToken.startsWith("pk.")) {
@@ -64,8 +81,7 @@ export function createMap(container, options = {}) {
     zoom: 13.6,
     attributionControl: true,
     cooperativeGestures: true,
-  });
-  map.addControl(
+  });  map.addControl(
     new mapboxgl.NavigationControl({ showCompass: false }),
     "top-right",
   );
@@ -78,13 +94,247 @@ export function createMap(container, options = {}) {
     incidents: [],
     selectedId: "",
   };
-  const markerImages = new Map();
-  let mapDestroyed = false;
+  let selectedMarker;
   let updating = false;
   let updateApplied = false;
 
+  // What the map shows: reports grouped into badges by how much they overlap
+  // on screen (see clusters.js).
+  //
+  // Badges are DOM markers, not a GeoJSON layer. A layer can only animate by
+  // calling setData every frame, which re-tiles the data in a Mapbox worker;
+  // the worker is busy loading tiles while the map zooms, so most frames were
+  // dropped (measured: 67 of 285 reached the screen during a ctrl+scroll zoom)
+  // and the badges froze. Markers instead move with the camera inside Mapbox's
+  // own render frame, and each merge or split is a Web Animation on transform
+  // and opacity that the compositor runs with no JavaScript per frame.
+  //
+  // FLIP: a badge's marker sits at where it ends up, and its button animates
+  // from where it was (as a pixel offset) to rest. The end is always exact; if
+  // the zoom keeps moving mid-animation the offset is briefly a little off,
+  // which at 160ms never reads.
+  let plan = [];
+  let planStart = -Infinity;
+  let groupedZoom = NaN;
+  let reportsById = new Map();
+  const badges = new Map(); // node.sig -> { marker, element, button, node, animation }
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  // The CSS twin of easeOut in clusters.js, 1 - (1 - t)^4, so the look computed
+  // for a regroup that starts mid-move matches what the compositor shows.
+  const EASE_OUT_QUART = "cubic-bezier(0.25, 1, 0.5, 1)";
+
+  // Every badge's look right now: mid-move if a plan is still playing.
+  const onScreen = () => {
+    const progress = (performance.now() - planStart) / TRANSITION_MS;
+    return progress >= 1 ? settle(plan) : frameAt(plan, progress);
+  };
+
+  const icon = (src) => {
+    const image = document.createElement("img");
+    image.src = src;
+    image.width = 20;
+    image.height = 20;
+    image.alt = "";
+    image.draggable = false;
+    image.decoding = "async";
+    return image;
+  };
+
+  // Three kinds of badge:
+  //  - a report: its category icon, click selects it;
+  //  - a stack, several reports at one coordinate: the stack icon, no number,
+  //    click lists them in the tooltip;
+  //  - a cluster, different places merged by overlap: a number, click zooms in.
+  const fillBadge = ({ element, button }, node) => {
+    const kind = !node.sameSpot ? "cluster" : node.count > 1 ? "stack" : "report";
+    element.style.setProperty("--badge-size", `${nodeRadius(node) * 2}px`);
+    button.dataset.kind = kind;
+    button.dataset.ids = node.sig;
+    button.textContent = "";
+    if (kind === "cluster") {
+      const count = document.createElement("span");
+      count.textContent =
+        node.count >= 1000 ? `${Math.round(node.count / 100) / 10}k` : String(node.count);
+      button.append(count);
+      button.setAttribute("aria-label", `${node.count} reports nearby, zoom in`);
+    } else if (kind === "stack") {
+      button.append(icon(stackMarkerIcon));
+      button.setAttribute("aria-label", `${node.count} reports at this spot`);
+    } else {
+      const incident = reportsById.get(node.ids[0]);
+      button.append(icon(incidentIcons[incident?.category] || stackMarkerIcon));
+      button.setAttribute(
+        "aria-label",
+        incident ? `${titleCase(incident.category)}, ${titleCase(incident.block)}` : "Report",
+      );
+    }
+  };
+
+  const onBadgeClick = (node) => {
+    const lngLat = { lng: node.lng, lat: node.lat };
+    // A numbered cluster only ever zooms in; the tooltip is for a stack, which
+    // zooming can't separate. At the zoom limit nothing more can separate a
+    // cluster either, so it lists its reports.
+    if (!node.sameSpot) {
+      if (map.getZoom() < CLUSTER_ZOOM_LIMIT) {
+        zoomIntoCluster(node.ids);
+      } else {
+        openStackPopup(node.ids, lngLat);
+      }
+      return;
+    }
+    if (node.count > 1) {
+      openStackPopup(node.ids, lngLat);
+      return;
+    }
+    options.onSelect?.(node.ids[0]);
+  };
+
+  const createBadge = (node) => {
+    const element = document.createElement("div");
+    element.className = "incident-marker";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "incident-badge";
+    // The records list is the keyboard path; a tab stop per badge would bury it.
+    button.tabIndex = -1;
+    element.append(button);
+    const badge = { element, button, node, animation: null };
+    button.addEventListener("click", (event) => {
+      // The map's own click would close the tooltip this click opens.
+      event.stopPropagation();
+      onBadgeClick(badge.node);
+    });
+    fillBadge(badge, node);
+    badge.marker = new mapboxgl.Marker({ element }).setLngLat([node.lng, node.lat]).addTo(map);
+    return badge;
+  };
+
+  const removeBadge = (sig, badge) => {
+    badge.animation?.cancel();
+    badge.marker.remove();
+    badges.delete(sig);
+  };
+
+  // One badge from its look at the start of the plan to its look at the end.
+  const moveBadge = (sig, badge, { start, end, ghost }, animate) => {
+    badge.animation?.cancel();
+    badge.animation = null;
+    const still =
+      start.lng === end.lng &&
+      start.lat === end.lat &&
+      start.scale === end.scale &&
+      start.opacity === end.opacity;
+    if (!animate || still) {
+      if (ghost) {
+        removeBadge(sig, badge);
+      }
+      return;
+    }
+    const from = map.project([start.lng, start.lat]);
+    const to = map.project([end.lng, end.lat]);
+    const animation = badge.button.animate(
+      [
+        {
+          transform: `translate(${from.x - to.x}px, ${from.y - to.y}px) scale(${start.scale})`,
+          opacity: start.opacity,
+        },
+        { transform: `scale(${end.scale})`, opacity: end.opacity },
+      ],
+      {
+        duration: TRANSITION_MS,
+        easing: EASE_OUT_QUART,
+        // A leaving badge holds its faded end until it is removed; the others
+        // end at rest, which is their own style, so they need no fill.
+        fill: ghost ? "forwards" : "none",
+      },
+    );
+    badge.animation = animation;
+    if (ghost) {
+      animation.finished
+        .then(() => {
+          if (badge.animation === animation) {
+            removeBadge(sig, badge);
+          }
+        })
+        .catch(() => {});
+    }
+  };
+
+  // Regroups for the current zoom and moves the badges from how they look now
+  // to the new grouping. Called again as the zoom moves, so a move may begin
+  // while the last one is still playing; it picks up from the on-screen look.
+  // Nothing moves on first paint, under reduced motion, or when the grouping
+  // didn't change. `refresh` redraws badge contents, for new data.
+  const applyLayout = ({ refresh = false } = {}) => {
+    if (!map.getSource("incidents")) {
+      return;
+    }
+    groupedZoom = map.getZoom();
+    reportsById = new Map(pending.incidents.map((incident) => [String(incident.id), incident]));
+    const next = buildClusters(pending.incidents, (longitude, latitude) =>
+      map.project([longitude, latitude]),
+    );
+    const current = onScreen();
+    plan = planTransition(current, next);
+    const animate = current.length > 0 && !reducedMotion.matches && isMoving(plan);
+    planStart = animate ? performance.now() : -Infinity;
+
+    const planned = new Set();
+    for (const item of plan) {
+      const { sig } = item.node;
+      planned.add(sig);
+      let badge = badges.get(sig);
+      if (!badge) {
+        badge = createBadge(item.node);
+        badges.set(sig, badge);
+      } else if (refresh) {
+        fillBadge(badge, item.node);
+      }
+      badge.node = item.node;
+      badge.marker.setLngLat([item.end.lng, item.end.lat]);
+      badge.element.classList.toggle("is-ghost", item.ghost);
+      badge.button.inert = item.ghost;
+      moveBadge(sig, badge, item, animate);
+    }
+    for (const [sig, badge] of badges) {
+      if (!planned.has(sig)) {
+        removeBadge(sig, badge);
+      }
+    }
+  };
+
+  // A cluster of different places opens up by zooming toward its reports, at
+  // most CLUSTER_ZOOM_STEP levels per click. Each click lands on smaller
+  // clusters, stacks or single badges, and clicking again keeps going, so the
+  // map never jumps straight to street level. Never zooms out.
+  const zoomIntoCluster = (ids) => {
+    const bounds = new mapboxgl.LngLatBounds();
+    for (const id of ids) {
+      const incident = reportsById.get(id);
+      if (incident) {
+        bounds.extend([incident.longitude, incident.latitude]);
+      }
+    }
+    if (bounds.isEmpty()) {
+      return;
+    }
+    const current = map.getZoom();
+    const fit = map.cameraForBounds(bounds, { padding: 60, maxZoom: 20 });
+    const zoom = Math.min(
+      Math.max(fit?.zoom ?? current, current + 1),
+      current + CLUSTER_ZOOM_STEP,
+      CLUSTER_ZOOM_LIMIT,
+    );
+    map.easeTo({
+      center: fit?.center ?? bounds.getCenter(),
+      zoom,
+      duration: reducedMotion.matches ? 0 : 500,
+    });
+  };
+
   map.on("render", () => {
-    if (updating && updateApplied && map.isSourceLoaded("radius") && map.isSourceLoaded("incidents") && map.isSourceLoaded("selected-incident")) {
+    if (updating && updateApplied && map.isSourceLoaded("radius") && map.isSourceLoaded("incidents")) {
       updating = false;
       options.onUpdating?.(false);
     }
@@ -95,64 +345,6 @@ export function createMap(container, options = {}) {
       options.onUpdating?.(false);
     }
   });
-
-  const loadMarkerImages = async () => {
-    const categoryEntries = Object.entries(incidentIcons);
-    for (const [category, imageUrl] of categoryEntries) {
-      const image = new Image();
-      image.src = imageUrl;
-      try {
-        await image.decode();
-        if (mapDestroyed) {
-          return;
-        }
-        const imageName = `category-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-        addMarkerImage(image, imageName);
-        // The selected badge is a red disc, so its glyph has to read as white.
-        addMarkerImage(image, `${imageName}-selected`, "#ffffff");
-        markerImages.set(category, imageName);
-      } catch (error) {
-        console.error(`Unable to load the ${category} map icon.`, error);
-      }
-    }
-
-    // Badges that stand for several reports at one point use the stack glyph
-    // instead of a single category icon.
-    const stackImage = new Image();
-    stackImage.src = stackMarkerIcon;
-    try {
-      await stackImage.decode();
-      if (!mapDestroyed) {
-        addMarkerImage(stackImage, "stack");
-        addMarkerImage(stackImage, "stack-selected", "#ffffff");
-      }
-    } catch (error) {
-      console.error("Unable to load the stack map icon.", error);
-    }
-
-    if (!mapDestroyed) {
-      update({});
-    }
-  };
-
-  // Draws the icon at 40px and registers it. With a `tint`, the icon becomes a
-  // flat silhouette in that colour, keeping its shape and transparency.
-  const addMarkerImage = (image, name, tint) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 40;
-    canvas.height = 40;
-    const context = canvas.getContext("2d");
-    context.drawImage(image, 0, 0, 40, 40);
-    if (tint) {
-      context.globalCompositeOperation = "source-in";
-      context.fillStyle = tint;
-      context.fillRect(0, 0, 40, 40);
-    }
-    const imageData = context.getImageData(0, 0, 40, 40);
-    if (!map.hasImage(name)) {
-      map.addImage(name, imageData, { pixelRatio: 2 });
-    }
-  };
 
   // Water only.
   const WATER = "#cfe0e8";
@@ -251,19 +443,20 @@ export function createMap(container, options = {}) {
     offset: 16,
   });
 
-  const openStackPopup = (hits, lngLat) => {
+  const openStackPopup = (ids, lngLat) => {
     const list = document.createElement("div");
     list.className = "stack-popup";
 
     const heading = document.createElement("p");
     heading.className = "stack-popup-title";
-    heading.textContent = `${hits.length} reports at this spot`;
-    list.append(heading);
+    heading.textContent = `${ids.length} reports at this spot`;
+    // The title stays put; only the rows scroll.
+    const rows = document.createElement("div");
+    rows.className = "stack-popup-list";
+    list.append(heading, rows);
 
-    hits.forEach((feature) => {
-      const incident = pending.incidents.find(
-        (item) => item.id === String(feature.properties.id),
-      );
+    ids.forEach((id) => {
+      const incident = pending.incidents.find((item) => item.id === String(id));
       if (!incident) {
         return;
       }
@@ -304,7 +497,24 @@ export function createMap(container, options = {}) {
         stackPopup.remove();
         options.onSelect?.(incident.id);
       });
-      list.append(row);
+      rows.append(row);
+    });
+
+    // The map frame clips anything that spills out of it, so the list may only
+    // be as tall as the room on the roomier side of the spot (Mapbox opens the
+    // popup on whichever side fits). Popup offset + tip + padding + title ≈ 80px.
+    const height = map.getContainer?.().clientHeight || 0;
+    const y = map.project(lngLat).y;
+    const room = Math.max(y, height - y) - 80;
+    if (height && room > 0) {
+      rows.style.maxHeight = `${Math.max(120, Math.min(260, room))}px`;
+    }
+    // Scrolling the list should scroll the list, not zoom the map under it.
+    // ctrl/⌘ + wheel is still a map zoom.
+    rows.addEventListener("wheel", (event) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        event.stopPropagation();
+      }
     });
 
     stackPopup.setLngLat(lngLat).setDOMContent(list).addTo(map);
@@ -370,36 +580,57 @@ export function createMap(container, options = {}) {
           category: incident.category,
           stacked:
             (pointCounts.get(`${incident.longitude},${incident.latitude}`) || 1) > 1,
-          icon: markerImages.get(incident.category) || "",
         },
       })),
     });
+    applyLayout({ refresh: true });
 
-    // The open report gets its own source: inside a cluster it would otherwise
-    // be hidden by the count disc, and the map would stop matching the panel.
+    // The open report gets its own badge above the others: inside a cluster it
+    // would otherwise be hidden by the count disc, and the map would stop
+    // matching the panel.
     const selected = pending.incidents.find(
       (incident) => incident.id === pending.selectedId,
     );
-    map.getSource("selected-incident").setData({
-      type: "FeatureCollection",
-      features: selected
-        ? [
-            {
-              type: "Feature",
-              geometry: {
-                type: "Point",
-                coordinates: [selected.longitude, selected.latitude],
-              },
-              properties: {
-                id: selected.id,
-                stacked:
-                  (pointCounts.get(`${selected.longitude},${selected.latitude}`) || 1) > 1,
-                icon: markerImages.get(selected.category) || "",
-              },
-            },
-          ]
-        : [],
-    });
+    if (selected) {
+      const spotIds = pending.incidents
+        .filter(
+          (incident) =>
+            incident.longitude === selected.longitude && incident.latitude === selected.latitude,
+        )
+        .map((incident) => incident.id);
+      if (!selectedMarker) {
+        const element = document.createElement("div");
+        element.className = "incident-marker is-selected";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "incident-badge";
+        button.tabIndex = -1;
+        element.append(button);
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const { ids, lngLat } = selectedMarker.spot;
+          if (ids.length > 1) {
+            openStackPopup(ids, lngLat);
+          }
+        });
+        selectedMarker = new mapboxgl.Marker({ element });
+      }
+      const coordinates = [selected.longitude, selected.latitude];
+      selectedMarker.spot = { ids: spotIds, lngLat: { lng: coordinates[0], lat: coordinates[1] } };
+      const button = selectedMarker.getElement().querySelector("button");
+      button.dataset.ids = selected.id;
+      button.textContent = "";
+      button.append(
+        icon(spotIds.length > 1 ? stackMarkerIcon : incidentIcons[selected.category] || stackMarkerIcon),
+      );
+      button.setAttribute(
+        "aria-label",
+        `Open report: ${titleCase(selected.category)}, ${titleCase(selected.block)}`,
+      );
+      selectedMarker.setLngLat(coordinates).addTo(map);
+    } else {
+      selectedMarker?.remove();
+    }
     updateApplied = true;
     if (selected) {
       if (!incidentLabel) {
@@ -455,120 +686,12 @@ export function createMap(container, options = {}) {
       source: "radius",
       paint: { "line-color": PRIMARY, "line-width": 1.5 },
     });
+    // Every report, one feature each. Nothing draws from it: it is the full
+    // list the badges (DOM markers, see applyLayout) are derived from.
     map.addSource("incidents", {
       type: "geojson",
       data: { type: "FeatureCollection", features: [] },
-      // Reports in the same block share a coordinate to four decimals, so
-      // without clustering they sit exactly on top of each other: the last
-      // badge drawn wins every click and the rest are unreachable.
-      cluster: true,
-      clusterRadius: 24,
-      clusterMaxZoom: 14,
     });
-    map.addSource("selected-incident", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: [] },
-    });
-    map.addLayer({
-      id: "incident-clusters",
-      type: "circle",
-      source: "incidents",
-      filter: ["has", "point_count"],
-      paint: {
-        "circle-color": INCIDENT,
-        "circle-radius": [
-          "step",
-          ["get", "point_count"],
-          17,
-          10,
-          20,
-          50,
-          24,
-        ],
-      },
-    });
-    map.addLayer({
-      id: "incident-cluster-counts",
-      type: "symbol",
-      source: "incidents",
-      filter: ["has", "point_count"],
-      layout: {
-        "text-field": ["get", "point_count_abbreviated"],
-        "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-        "text-size": 12,
-        "text-allow-overlap": true,
-      },
-      paint: { "text-color": INK },
-    });
-    map.addLayer({
-      id: "incident-points",
-      type: "circle",
-      source: "incidents",
-      filter: ["!", ["has", "point_count"]],
-      paint: {
-        "circle-radius": 16,
-        // Yellow disc behind a dark glyph.
-        "circle-color": INCIDENT,
-      },
-    });
-    map.addLayer({
-      id: "incident-icons",
-      type: "symbol",
-      source: "incidents",
-      filter: ["all", ["!", ["has", "point_count"]], ["!=", ["get", "icon"], ""]],
-      layout: {
-        "icon-image": [
-          "case",
-          ["get", "stacked"],
-          "stack",
-          ["get", "icon"],
-        ],
-        "icon-size": 1,
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-      },
-    });
-    // Drawn last so the open report is always legible above its cluster.
-    map.addLayer({
-      id: "selected-point",
-      type: "circle",
-      source: "selected-incident",
-      paint: {
-        "circle-radius": 18,
-        "circle-color": INK,
-      },
-    });
-    map.addLayer({
-      id: "selected-icon",
-      type: "symbol",
-      source: "selected-incident",
-      layout: {
-        "icon-image": [
-          "case",
-          ["get", "stacked"],
-          "stack-selected",
-          ["concat", ["get", "icon"], "-selected"],
-        ],
-        "icon-size": 1,
-        "icon-allow-overlap": true,
-        "icon-ignore-placement": true,
-      },
-    });
-    // Reports in the same block share a coordinate, so their badges sit on top
-    // of each other. A 22px radius gives every badge a 44px target, and a
-    // click opens a popup listing everything stacked there.
-    map.addLayer({
-      id: "incident-hit",
-      type: "circle",
-      source: "incidents",
-      filter: ["all", ["!", ["has", "point_count"]], ["has", "id"]],
-      paint: {
-        "circle-radius": 22,
-        "circle-color": INCIDENT,
-        "circle-opacity": 0,
-      },
-    });
-    loadMarkerImages();
     const campusElement = document.createElement("img");
     campusElement.className = "campus-marker";
     campusElement.src = campusIcon;
@@ -577,49 +700,15 @@ export function createMap(container, options = {}) {
     new mapboxgl.Marker({ element: campusElement })
       .setLngLat(CAMPUS)
       .addTo(map);
-    map.on("click", "incident-hit", (event) => {
-      const hits = event.features || [];
-      if (hits.length === 0) {
-        return;
+    // Regroup while the zoom is still moving, not after it lands, so the badges
+    // merge and split in step with the wheel or pinch. The final call catches
+    // whatever the last step missed.
+    map.on("zoom", () => {
+      if (Math.abs(map.getZoom() - groupedZoom) >= ZOOM_STEP) {
+        applyLayout();
       }
-      if (hits.length === 1) {
-        options.onSelect?.(String(hits[0].properties.id));
-        return;
-      }
-      openStackPopup(hits, event.lngLat);
     });
-    // A cluster is a stack of reports: open it up rather than picking one for
-    // the user, which is what stacking them used to do.
-    map.on("click", "incident-clusters", (event) => {
-      const feature = event.features?.[0];
-      if (!feature) {
-        return;
-      }
-      const clusterId = feature.properties.cluster_id;
-      map
-        .getSource("incidents")
-        .getClusterExpansionZoom(clusterId, (error, zoom) => {
-          if (error) {
-            return;
-          }
-          map.easeTo({
-            center: feature.geometry.coordinates,
-            zoom: Math.min(zoom, 16),
-          });
-        });
-    });
-    map.on("mouseenter", "incident-hit", () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseenter", "incident-clusters", () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", "incident-hit", () => {
-      map.getCanvas().style.cursor = "";
-    });
-    map.on("mouseleave", "incident-clusters", () => {
-      map.getCanvas().style.cursor = "";
-    });
+    map.on("zoomend", () => applyLayout());
     update({});
   });
   return {
@@ -631,7 +720,10 @@ export function createMap(container, options = {}) {
     },
     setWaterColor,
     destroy: () => {
-      mapDestroyed = true;
+      for (const badge of badges.values()) {
+        badge.animation?.cancel();
+      }
+      badges.clear();
       if (updating) options.onUpdating?.(false);
       map.remove();
     },

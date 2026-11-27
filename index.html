@@ -19,6 +19,9 @@
 
     <div class="app-layout">
       <nav class="sidebar" aria-label="Main navigation">
+        <span class="nav-rail" aria-hidden="true"></span>
+        <span class="nav-pill" aria-hidden="true"></span>
+        <span class="nav-edge" aria-hidden="true"></span>
         <button id="nav-overview" class="nav-item active" data-action="overview" aria-current="page">
           <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 18 18" aria-hidden="true">
             <rect x="1" y="2" width="8.5" height="7" rx="1.75" ry="1.75" fill="currentColor" />
@@ -48,10 +51,21 @@
       <main id="main" class="main" tabindex="-1">
         <section id="screen-overview">
           <div class="page-heading shortlist-heading">
-            <h1>Your Chicago Places</h1>
+            <div class="overview-title">
+              <h1>Your Chicago Places</h1>
+              <span class="overview-count" id="overview-count"></span>
+            </div>
+            <fieldset class="filter-group overview-group-by" id="overview-group-by">
+              <legend>Group by</legend>
+              <div class="segments">
+                <button type="button" class="selected" data-action="group-overview" data-group-by="decision" aria-pressed="true">Decision</button>
+                <button type="button" data-action="group-overview" data-group-by="type" aria-pressed="false">Housing type</button>
+                <button type="button" data-action="group-overview" data-group-by="zip" aria-pressed="false">ZIP code</button>
+              </div>
+            </fieldset>
           </div>
-          <!-- Saved Chicago Places are added here by main.js -->
-          <div class="cards" id="apartment-list"></div>
+          <!-- Saved Chicago Places are added here by main.js, one section per group -->
+          <div class="overview-groups" id="apartment-list"></div>
           <!-- Shown when nothing is saved yet -->
           <section class="empty-overview" id="overview-empty" hidden>
             <h2>No Chicago Place to be saved yet</h2>
@@ -185,8 +199,14 @@
                     </button>
 
                     <span class="date-panel-title">
-                      <select id="date-month" aria-label="Month"></select>
-                      <select id="date-year" aria-label="Year"></select>
+                      <span class="select-wrap">
+                        <select id="date-month" aria-label="Month"></select>
+                        <span class="local-icon select-caret" data-icon="chevron-right" data-size="12" aria-hidden="true"></span>
+                      </span>
+                      <span class="select-wrap">
+                        <select id="date-year" aria-label="Year"></select>
+                        <span class="local-icon select-caret" data-icon="chevron-right" data-size="12" aria-hidden="true"></span>
+                      </span>
                     </span>
 
                     <button class="date-nav" type="button" data-action="date-next" aria-label="Next month">
@@ -394,7 +414,7 @@
 
         <div class="card-top">
           <div>
-            <h2 data-field="address"></h2>
+            <h3 data-field="address"></h3>
             <p class="rent" data-field="rent"></p>
           </div>
           <span class="housing-type" data-field="housing-type"></span>

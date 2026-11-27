@@ -108,7 +108,7 @@ comparable.
 - Use `.compare-band-head` for the sticky column labels. It is visual only and
   is hidden on phones.
 - Bands follow the shortlist order. This screen does not repeat the order
-  caption; the overview's sort label explains the same order.
+  caption; the overview's sections keep the same order inside each group.
 - The daily chart is a `role="img"` with the ten daily counts in its
   accessible label. Print the first and last day under the bars. The header's
   hover titles are not the only route to the values.

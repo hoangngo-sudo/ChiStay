@@ -68,6 +68,11 @@
   box-sizing: border-box;
 }
 html {
+  /* Reserve the scrollbar's lane on every page. Without it a short screen has
+     no scrollbar and a long one does, so the content jumps ~15px sideways when
+     you navigate between them. Overlay scrollbars (phones, macOS) take no
+     space, so this costs them nothing. */
+  scrollbar-gutter: stable;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
 }
@@ -213,8 +218,46 @@ main:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+  --edge-h: 20px;
+}
+
+/* Shared active indicator. main.js writes --nav-x/y/w/h from the active item;
+   only transform animates, so the move stays on the compositor. */
+.nav-pill,
+.nav-edge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  opacity: var(--nav-visible, 0);
+}
+
+/* Desktop rail guide: a faint 1px track the edge bar rides on. Its centre
+   lines up with the bar's centre (left 5px + 1.5px). */
+.nav-rail {
+  position: absolute;
+  left: 6px;
+  top: calc(var(--nav-rail-y, 0px) - var(--edge-h) / 2);
+  width: 1px;
+  height: calc(var(--nav-rail-h, 0px) + var(--edge-h));
+  background: color-mix(in oklch, var(--border-strong) 45%, var(--surface));
+  pointer-events: none;
+}
+
+/* Desktop: the background snaps with the click, the edge bar glides to it. */
+.nav-pill {
+  display: none;
+}
+.nav-edge {
+  width: 3px;
+  height: var(--edge-h);
+  border-radius: 2px;
+  background: var(--primary);
+  transform: translate(5px, calc(var(--nav-y, 0px) + (var(--nav-h, 46px) - var(--edge-h)) / 2));
 }
 .nav-item {
+  position: relative;
   min-height: 46px;
   width: 100%;
   display: flex;
@@ -250,6 +293,27 @@ main:focus-visible {
 }
 .nav-item.active:active {
   background: var(--primary-wash-strong);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nav-edge {
+    transition:
+      transform 220ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 150ms ease;
+  }
+  .nav-pill {
+    transition:
+      transform 280ms cubic-bezier(0.23, 1, 0.32, 1),
+      opacity 150ms ease;
+  }
+  .nav-item {
+    transition:
+      color 150ms ease,
+      transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar.nav-snap .nav-edge,
+  .sidebar.nav-snap .nav-pill {
+    transition: none;
+  }
 }
 .main {
   flex: 1;
@@ -364,6 +428,61 @@ main:focus-visible {
   color: var(--primary);
   box-shadow: var(--ring-raised);
 }
+/* Overview heading: the title with its count, and the Group by control. */
+.overview-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.overview-count {
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.overview-group-by .segments button {
+  padding: 0 16px;
+}
+
+/* One section per group, each with a disclosure heading over its cards. */
+.overview-group + .overview-group {
+  margin-top: 24px;
+}
+.overview-group-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 500;
+}
+.overview-group-title button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-left: -12px;
+  padding: 0 16px 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  transition: background-color 150ms ease;
+}
+.overview-group-title .local-icon {
+  color: var(--muted);
+}
+.overview-group-title [aria-expanded="true"] .local-icon {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .overview-group-title .local-icon {
+    transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+.overview-group-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -385,7 +504,7 @@ main:focus-visible {
   position: relative;
   z-index: 1;
 }
-.card-top h2 {
+.card-top h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 500;
@@ -768,19 +887,25 @@ select:invalid,
 select option[value=""] {
   color: var(--muted);
 }
+/* Every select in the app opens the same custom list: housing type, category,
+   and the calendar's month and year. */
 @supports (appearance: base-select) {
-  #housing-type, #category,
-  #housing-type::picker(select), #category::picker(select) {
+  :is(#housing-type, #category, #date-month, #date-year),
+  :is(#housing-type, #category, #date-month, #date-year)::picker(select) {
     appearance: base-select;
   }
-  #housing-type, #category {
-    align-items: center;
+  :is(#housing-type, #category) {
     padding-right: 34px;
   }
-  #housing-type::picker-icon, #category::picker-icon {
+  /* base-select lays the button out as a box; without this the label sits at
+     the top while the caret is centred. */
+  :is(#housing-type, #category, #date-month, #date-year) {
+    align-items: center;
+  }
+  :is(#housing-type, #category, #date-month, #date-year)::picker-icon {
     display: none;
   }
-  #housing-type::picker(select), #category::picker(select) {
+  :is(#housing-type, #category, #date-month, #date-year)::picker(select) {
     border: 0;
     border-radius: var(--radius);
     background: var(--surface);
@@ -788,13 +913,20 @@ select option[value=""] {
     padding: 4px;
     margin-top: 6px;
   }
-  #housing-type option, #category option {
+  /* Twelve months at full row height would run past the panel. */
+  :is(#date-month, #date-year)::picker(select) {
+    max-height: 280px;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  :is(#housing-type, #category, #date-month, #date-year) option {
     min-height: 44px;
     padding: 10px 12px;
     border-radius: var(--radius-sm);
     gap: 8px;
   }
-  #housing-type option::checkmark, #category option::checkmark {
+  :is(#housing-type, #category, #date-month, #date-year) option::checkmark {
     content: "";
     order: 1;
     margin-left: auto;
@@ -803,14 +935,12 @@ select option[value=""] {
     background: var(--ink);
     mask: url("./assets/icons/check-circle.svg") center / contain no-repeat;
   }
-  #housing-type option:checked, #category option:checked {
-    background: var(--surface-hover);
-  }
-  #housing-type option:focus-visible, #category option:focus-visible {
+  :is(#housing-type, #category, #date-month, #date-year) option:checked,
+  :is(#housing-type, #category, #date-month, #date-year) option:focus-visible {
     background: var(--surface-hover);
   }
   @media (hover: hover) {
-    #housing-type option:hover, #category option:hover {
+    :is(#housing-type, #category, #date-month, #date-year) option:hover {
       background: var(--surface-hover);
     }
   }
@@ -921,6 +1051,18 @@ select option[value=""] {
   width: 100%;
   height: 100%;
 }
+/* On touch, a one-finger swipe over the map already scrolls the page
+   (cooperativeGestures), but Mapbox also dims the whole map with a "use two
+   fingers" overlay that fades out over ~1.7s. The map is a third of the phone
+   screen, so the dim fired on most scrolls and read as a glitch. The page
+   scroll is what matters; two fingers still move the map. */
+@media (pointer: coarse) {
+  /* Scoped under the map so it outranks Mapbox's own stylesheet, which loads
+     after this one. */
+  .mapboxgl-map .mapboxgl-touch-pan-blocker {
+    display: none;
+  }
+}
 
 code {
   font-size: 0.95em;
@@ -931,6 +1073,19 @@ code {
   padding: 12px;
   border-radius: var(--radius);
   box-shadow: var(--shadow-toast);
+}
+/* A spot can hold dozens of reports; scroll the list instead of letting it run
+   off the map. */
+.stack-popup-list {
+  max-height: 260px; /* JS lowers this to fit the map; ~5 rows, the 6th cut */
+  /* Room so a row's focus ring isn't clipped by the scroll box, given back with
+     negative margins; the scrollbar sits in the popup padding, not on rows. */
+  margin: -3px -6px -3px -3px;
+  padding: 3px 2px 3px 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 .stack-popup-title {
   margin: 0 0 6px;
@@ -1024,6 +1179,75 @@ code {
   height: 32px;
   background: var(--surface);
   border-radius: 50%;
+}
+
+/* Incident badges are DOM markers (see applyLayout in map.js). Mapbox owns the
+   marker element's transform to place it; merges and splits animate the inner
+   button, so the two never fight. Stacking: badges, then the open report, then
+   the place, campus and labels, as when the badges were drawn in the canvas. */
+.incident-marker {
+  --badge-size: 32px;
+  z-index: 0;
+  width: var(--badge-size);
+  height: var(--badge-size);
+}
+.incident-marker.is-selected {
+  z-index: 1;
+}
+.apartment-marker,
+.campus-marker,
+.map-address-label {
+  z-index: 2;
+}
+.map-incident-label {
+  z-index: 3;
+}
+.incident-badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--incident);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* 44px target on a 32px badge; bigger clusters already reach it. */
+.incident-badge::after {
+  content: "";
+  position: absolute;
+  inset: min(0px, calc((var(--badge-size) - 44px) / 2));
+  border-radius: 50%;
+}
+.incident-badge img {
+  display: block;
+  pointer-events: none;
+}
+.incident-badge:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.incident-marker.is-selected .incident-badge {
+  width: 36px;
+  height: 36px;
+  margin: -2px;
+  background: var(--ink);
+}
+.incident-marker.is-selected .incident-badge img {
+  filter: brightness(0) invert(1);
+}
+/* A badge on its way out of a merge or split can't be clicked. */
+.incident-marker.is-ghost {
+  pointer-events: none;
 }
 .filters {
   display: flex;
@@ -1200,11 +1424,14 @@ fieldset.filter-group {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
+  /* Breathing room so the field rings don't crowd the panel edge or the
+     weekday row. */
+  padding: 4px 0 10px;
 }
 .date-panel-title {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
 }
 .date-nav {
   display: inline-flex;
@@ -1227,21 +1454,21 @@ fieldset.filter-group {
   cursor: default;
 }
 
+/* A compact copy of the form select: same ring, radius, caret and list, sized
+   to sit between the 32px arrow buttons. */
+.date-panel-title .select-wrap {
+  display: inline-block;
+}
 .date-panel-title select {
-  appearance: none;
   width: auto;
-  min-height: 32px;
-  padding: 0 20px 0 6px;
-  border: 0;
-  border-radius: var(--radius);
-  background-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 18 18'%3E%3Cpath d='m4.8 7.2 4.2 4.2 4.2-4.2' fill='none' stroke='%2343423d' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 2px center;
+  min-height: 36px;
+  padding: 0 32px 0 12px;
   color: var(--ink);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
-  cursor: pointer;
+}
+.date-panel-title .select-caret {
+  right: 12px;
 }
 .date-weekdays,
 .date-grid {
@@ -1877,7 +2104,6 @@ fieldset.filter-group {
     color: var(--ink);
   }
 
-  .date-panel-title select:hover,
   .date-day:not(.is-selected):hover:not(:disabled) > span {
     background-color: var(--surface-hover);
   }
@@ -1905,6 +2131,10 @@ fieldset.filter-group {
   }
   .icon-button.bordered:hover {
     box-shadow: var(--ring-raised-hover);
+  }
+
+  .overview-group-title button:hover {
+    background-color: var(--surface-hover);
   }
 
   .icon-button[data-action="delete-apartment"]:hover {
@@ -1973,6 +2203,15 @@ fieldset.filter-group {
   html {
     scroll-padding-top: 70px;
   }
+  /* Group by moves under the title instead of squeezing beside it. */
+  .shortlist-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .overview-group-by .segments button {
+    padding: 0 10px;
+  }
   .topbar {
     min-height: calc(58px + env(safe-area-inset-top, 0px));
     padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px));
@@ -2001,6 +2240,30 @@ fieldset.filter-group {
   .nav-item span {
     text-align: center;
   }
+  /* Phones: no edge bar. One pill slides behind the row instead of the
+     background blinking off one tab and on at the next. */
+  .nav-edge,
+  .nav-rail {
+    display: none;
+  }
+  .nav-pill {
+    display: block;
+    width: var(--nav-w, 0px);
+    height: var(--nav-h, 0px);
+    border-radius: 6px;
+    background: var(--primary-wash);
+    transform: translate(var(--nav-x, 0px), var(--nav-y, 0px));
+  }
+  .nav-item.active,
+  .nav-item:active,
+  .nav-item.active:active {
+    background: transparent;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .nav-item:active {
+      transform: scale(0.97);
+    }
+  }
   .main {
     padding: 24px max(20px, env(safe-area-inset-right, 0px)) max(36px, calc(20px + env(safe-area-inset-bottom, 0px))) max(20px, env(safe-area-inset-left, 0px));
   }
@@ -2011,6 +2274,10 @@ fieldset.filter-group {
   .verify-map,
   .explore-map {
     height: 360px;
+  }
+  /* Once the list hits its end the page should keep scrolling, not stall. */
+  .match-list {
+    overscroll-behavior: auto;
   }
   .records-panel {
     height: auto;
@@ -2053,7 +2320,7 @@ fieldset.filter-group {
     text-wrap: pretty;
   }
   .shortlist-heading {
-    gap: 6px;
+    gap: 16px;
   }
   .compare-place h3 {
     text-wrap: pretty;
@@ -2092,7 +2359,7 @@ fieldset.filter-group {
   .card-top > div {
     display: contents;
   }
-  .card-top h2 {
+  .card-top h3 {
     flex: 0 0 100%;
     min-width: 0;
   }
@@ -2195,7 +2462,6 @@ fieldset.filter-group {
   }
   .date-panel-title select {
     min-height: 44px;
-    padding: 0 16px 0 2px;
   }
   .date-day {
     height: 44px;

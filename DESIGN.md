@@ -17,6 +17,7 @@ gradients, no drop-shadowed cards, no accent colour on a neutral control.
 | --- | --- |
 | [docs/screens.md](docs/screens.md) | adding a screen, choosing a control, copy |
 | [docs/compare-view.md](docs/compare-view.md) | the comparison screen's decided shape, copy and rejects |
+| [docs/overview.md](docs/overview.md) | the overview's grouped sections, copy and rejects |
 | [docs/colors.md](docs/colors.md) | any colour, token, or new state |
 | [docs/typography.md](docs/typography.md) | any size, weight, or number |
 | [docs/buttons.md](docs/buttons.md) | anything the user presses |

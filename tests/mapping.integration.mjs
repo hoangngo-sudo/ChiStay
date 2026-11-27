@@ -108,7 +108,7 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     assert.equal(await page.evaluate(() => window.__testMap.options.cooperativeGestures), true);
     await page.waitForFunction(() => {
       const features = window.__testMap?.getSource('incidents')?.data.features;
-      return features?.length && features.every(feature => feature.properties.icon);
+      return features?.length && document.querySelector('.incident-badge');
     });
 
     const snapshot = () => page.evaluate(() => ({
@@ -119,17 +119,17 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
         block: row.querySelector('[data-field="block"]').textContent,
         date: row.querySelector('time').dateTime,
       })),
-      features: window.__testMap.getSource('incidents').data.features.map(feature => ({ id: feature.properties.id, category: feature.properties.category, icon: feature.properties.icon, coordinates: feature.geometry.coordinates, stacked: feature.properties.stacked })),
-      selected: window.__testMap.getSource('selected-incident').data.features.map(feature => ({ id: feature.properties.id, coordinates: feature.geometry.coordinates })),
+      features: window.__testMap.getSource('incidents').data.features.map(feature => ({ id: feature.properties.id, category: feature.properties.category, coordinates: feature.geometry.coordinates, stacked: feature.properties.stacked })),
+      selected: [...document.querySelectorAll('.incident-marker.is-selected')].map(marker => ({ id: marker.querySelector('button').dataset.ids, coordinates: JSON.parse(marker.dataset.lngLat) })),
     }));
     const expectedFeatures = {
-      101: { id: '101', category: 'THEFT', icon: 'category-theft', coordinates: [-87.65, 41.87] },
-      102: { id: '102', category: 'BATTERY', icon: 'category-battery', coordinates: [-87.65, 41.87] },
-      103: { id: '103', category: 'THEFT', icon: 'category-theft', coordinates: [-87.6485, 41.875] },
-      108: { id: '108', category: 'THEFT', icon: 'category-theft', coordinates: [-87.65, 41.87360] },
-      109: { id: '109', category: 'THEFT', icon: 'category-theft', coordinates: [-87.65, 41.87364] },
-      111: { id: '111', category: 'THEFT', icon: 'category-theft', coordinates: [-87.65, 41.87723] },
-      112: { id: '112', category: 'THEFT', icon: 'category-theft', coordinates: [-87.65, 41.87725] },
+      101: { id: '101', category: 'THEFT', coordinates: [-87.65, 41.87] },
+      102: { id: '102', category: 'BATTERY', coordinates: [-87.65, 41.87] },
+      103: { id: '103', category: 'THEFT', coordinates: [-87.6485, 41.875] },
+      108: { id: '108', category: 'THEFT', coordinates: [-87.65, 41.87360] },
+      109: { id: '109', category: 'THEFT', coordinates: [-87.65, 41.87364] },
+      111: { id: '111', category: 'THEFT', coordinates: [-87.65, 41.87723] },
+      112: { id: '112', category: 'THEFT', coordinates: [-87.65, 41.87725] },
     };
     const expectedRows = {
       101: { id: '101', category: 'Theft', block: '001xx W Test St', date: '2026-10-21' },
@@ -153,11 +153,12 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     assert.deepEqual(current.selected, []);
     assert.equal(await page.locator('#category option[value="CRIMINAL DAMAGE"]').count(), 0);
 
-    await page.evaluate(() => {
-      const map = window.__testMap;
-      const features = map.getSource('incidents').data.features.filter(feature => ['101', '102'].includes(feature.properties.id));
-      map.handlers['click:incident-hit']({ features, lngLat: { lng: -87.65, lat: 41.87 } });
-    });
+    // 101 and 102 share a coordinate: one stack badge, no number, and a click
+    // lists both. The mock lays every marker at the corner, so click directly.
+    const stackBadge = page.locator('.incident-badge[data-ids="101,102"]');
+    assert.equal(await stackBadge.getAttribute('data-kind'), 'stack');
+    assert.equal(await stackBadge.textContent(), '');
+    await stackBadge.evaluate(button => button.click());
     const stackedReports = page.locator('.stack-popup-row');
     assert.equal(await stackedReports.count(), 2);
     await stackedReports.nth(1).click();
@@ -168,11 +169,7 @@ test('CSV records, filters, and Mapbox GeoJSON stay in sync', { timeout: 60000 }
     await page.locator('[data-action="back-to-records"]').click();
     assert.deepEqual((await snapshot()).selected, []);
 
-    await page.evaluate(() => {
-      const map = window.__testMap;
-      const feature = map.getSource('incidents').data.features.find(item => item.properties.id === '103');
-      map.handlers['click:incident-hit']({ features: [feature] });
-    });
+    await page.locator('.incident-badge[data-ids="103"]').evaluate(button => button.click());
     assert.equal(await page.locator('#detail-id').textContent(), '103');
     assert.deepEqual((await snapshot()).selected, [{ id: '103', coordinates: [-87.6485, 41.875] }]);
     await page.locator('[data-action="back-to-records"]').click();

@@ -139,8 +139,21 @@ export function filtersForDays(lastDay, days) {
   };
 }
 
+// The view-incidents window opens on 1-21 October 2026. If the data ends
+// before that, the window stops at the last day the data has.
+const DEFAULT_START_DAY = "2026-10-01";
+const DEFAULT_END_DAY = "2026-10-21";
+
 export function defaultFilters(lastDay) {
-  return filtersForDays(lastDay, 90);
+  if (!lastDay) {
+    return { radius: 0.5, startDay: "", endDay: "", category: "" };
+  }
+  return {
+    radius: 0.5,
+    startDay: DEFAULT_START_DAY,
+    endDay: lastDay < DEFAULT_END_DAY ? lastDay : DEFAULT_END_DAY,
+    category: "",
+  };
 }
 
 function distanceMiles(first, second) {

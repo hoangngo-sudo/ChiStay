@@ -298,6 +298,60 @@ function markNav(button, isActive) {
   }
 }
 
+// One shared indicator follows the active item: an edge bar on desktop, a
+// sliding pill on phones. JS only measures; CSS decides how it looks and moves.
+const sidebar = document.querySelector(".sidebar");
+let navIndicatorReady = false;
+
+function placeNavIndicator() {
+  // The rail runs between the bar's resting centres on the first and last
+  // items; CSS pads it by half a bar at each end so it stops where the bar does.
+  const items = sidebar.querySelectorAll(".nav-item");
+  const first = items[0];
+  const last = items[items.length - 1];
+  const firstMid = first.offsetTop + first.offsetHeight / 2;
+  const lastMid = last.offsetTop + last.offsetHeight / 2;
+  sidebar.style.setProperty("--nav-rail-y", `${firstMid}px`);
+  sidebar.style.setProperty("--nav-rail-h", `${lastMid - firstMid}px`);
+
+  const active = sidebar.querySelector(".nav-item.active");
+  if (!active) {
+    sidebar.style.setProperty("--nav-visible", "0");
+    return;
+  }
+  sidebar.style.setProperty("--nav-visible", "1");
+  sidebar.style.setProperty("--nav-x", `${active.offsetLeft}px`);
+  sidebar.style.setProperty("--nav-y", `${active.offsetTop}px`);
+  sidebar.style.setProperty("--nav-w", `${active.offsetWidth}px`);
+  sidebar.style.setProperty("--nav-h", `${active.offsetHeight}px`);
+}
+
+// Layout changes (breakpoints, font load) snap the indicator instead of
+// sliding it, so it only ever moves in response to a click.
+function snapNavIndicator() {
+  sidebar.classList.add("nav-snap");
+  placeNavIndicator();
+  void sidebar.offsetWidth;
+  sidebar.classList.remove("nav-snap");
+}
+
+// The sidebar stretches to the page's height, so it resizes on nearly every
+// screen change, in the same frame as the click. Snapping on that would cancel
+// the slide. Only snap when the items themselves moved: a breakpoint or a font
+// load.
+let navLayout = "";
+new ResizeObserver(() => {
+  const layout = Array.from(
+    sidebar.querySelectorAll(".nav-item"),
+    (item) => `${item.offsetLeft},${item.offsetTop},${item.offsetWidth},${item.offsetHeight}`,
+  ).join("|");
+  if (layout === navLayout) {
+    return;
+  }
+  navLayout = layout;
+  snapNavIndicator();
+}).observe(sidebar);
+
 function showScreen(name) {
   const screenChanged = state.screen !== name;
   addressSearchController?.abort();
@@ -311,6 +365,12 @@ function showScreen(name) {
   markNav(navOverview, name === "overview");
   markNav(navAdd, name === "verify" || name === "explore");
   markNav(navCompare, name === "compare");
+  if (navIndicatorReady) {
+    placeNavIndicator();
+  } else {
+    snapNavIndicator();
+    navIndicatorReady = true;
+  }
 
   showToast(state.toast);
   startMap();
@@ -347,19 +407,125 @@ function hideToastLater() {
 }
 
 // Screen 1 - apartment shortlist
+// The overview groups places into sections the user can collapse. The grouping
+// is remembered per browser; which sections are collapsed lasts for the visit.
+// Decided in docs/overview.md.
+const overviewGroupKey = "chistay-overview-group-v1";
+const HOUSING_TYPES = ["Studio", "1 bedroom", "2+ bedrooms", "Shared bedroom"];
+const overviewView = {
+  by: readOverviewGrouping(),
+  collapsed: new Set(),
+};
+
+function readOverviewGrouping() {
+  try {
+    const saved = localStorage.getItem(overviewGroupKey);
+    return ["decision", "type", "zip"].includes(saved) ? saved : "decision";
+  } catch {
+    return "decision";
+  }
+}
+
+// The ZIP code is the five digits after the street, e.g.
+// "500 South Desplaines Street, Chicago 60607". The street number comes before
+// the first comma, so a five-digit house number is never mistaken for one.
+function zipCode(address) {
+  const afterStreet = String(address || "").split(",").slice(1).join(",");
+  return afterStreet.match(/\b(\d{5})\b/)?.[1] || "";
+}
+
+// Each group is [key, heading, entries]. Entries keep the shortlist order
+// (worth a visit first, then lowest rent) inside every group; empty groups are
+// dropped.
+function overviewGroups(entries, by) {
+  let groups;
+  if (by === "type") {
+    groups = [...HOUSING_TYPES, ""].map((type) => [
+      type || "none",
+      type || "No housing type",
+      entries.filter((entry) => (HOUSING_TYPES.includes(entry.apartment.housingType) ? entry.apartment.housingType : "") === type),
+    ]);
+  } else if (by === "zip") {
+    const zips = [...new Set(entries.map((entry) => zipCode(entry.apartment.address)))];
+    zips.sort((first, second) => (first === "") - (second === "") || first.localeCompare(second));
+    groups = zips.map((zip) => [
+      zip || "none",
+      zip || "No ZIP code",
+      entries.filter((entry) => zipCode(entry.apartment.address) === zip),
+    ]);
+  } else {
+    groups = [
+      ["worth", "Worth a visit", entries.filter((entry) => entry.apartment.decision === "worth")],
+      ["deciding", "Still deciding", entries.filter((entry) => entry.apartment.decision !== "worth")],
+    ];
+  }
+  return groups.filter(([, , items]) => items.length > 0);
+}
+
 function renderOverview() {
   const list = document.querySelector("#apartment-list");
   const emptyState = document.querySelector("#overview-empty");
+  const count = document.querySelector("#overview-count");
+  const groupBy = document.querySelector("#overview-group-by");
 
   list.innerHTML = "";
 
-  const hasApartments = state.apartments.length > 0;
+  const total = state.apartments.length;
+  const hasApartments = total > 0;
   list.hidden = !hasApartments;
   emptyState.hidden = hasApartments;
+  groupBy.hidden = !hasApartments;
+  count.hidden = !hasApartments;
+  count.textContent = `${total} ${total === 1 ? "place" : "places"}`;
 
-  orderForShortlist(state.apartments).forEach((entry) => {
-    list.append(apartmentCard(entry.apartment, entry.index));
+  groupBy.querySelectorAll("[data-group-by]").forEach((button) => {
+    const selected = button.dataset.groupBy === overviewView.by;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-pressed", String(selected));
   });
+
+  const groups = overviewGroups(orderForShortlist(state.apartments), overviewView.by);
+  groups.forEach(([key, heading, entries], position) => {
+    const groupId = `${overviewView.by}:${key}`;
+    const open = !overviewView.collapsed.has(groupId);
+    const bodyId = `overview-group-${position}`;
+
+    const section = document.createElement("section");
+    section.className = "overview-group";
+
+    const title = document.createElement("h2");
+    title.className = "overview-group-title";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.dataset.action = "toggle-overview-group";
+    toggle.dataset.group = groupId;
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-controls", bodyId);
+    toggle.innerHTML = `${icon("chevron-right", 14)}<span></span><span class="overview-group-count"></span>`;
+    toggle.querySelector("span:not(.local-icon):not(.overview-group-count)").textContent = heading;
+    toggle.querySelector(".overview-group-count").textContent = entries.length;
+    // Read as "60607, 7 places", not "60607 7".
+    toggle.setAttribute("aria-label", `${heading}, ${entries.length} ${entries.length === 1 ? "place" : "places"}`);
+    title.append(toggle);
+
+    const cards = document.createElement("div");
+    cards.className = "cards";
+    cards.id = bodyId;
+    cards.hidden = !open;
+    entries.forEach((entry) => {
+      cards.append(apartmentCard(entry.apartment, entry.index));
+    });
+
+    section.append(title, cards);
+    list.append(section);
+  });
+}
+
+// Re-rendering replaces the buttons, so focus goes back to the new copy of the
+// one that was pressed.
+function refocusOverview(selector, matches) {
+  const target = Array.from(document.querySelectorAll(selector)).find(matches);
+  target?.focus();
 }
 
 // A place's saved visit-decision window is still restored when the place is
@@ -1726,6 +1892,36 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  if (action === "group-overview") {
+    const by = button.dataset.groupBy;
+    if (by === overviewView.by) return;
+    overviewView.by = by;
+    try {
+      localStorage.setItem(overviewGroupKey, by);
+    } catch {
+      // Private mode or blocked storage: the grouping still applies for now.
+    }
+    renderOverview();
+    refocusOverview("[data-group-by]", (item) => item.dataset.groupBy === by);
+    return;
+  }
+
+  if (action === "toggle-overview-group") {
+    // Update this section in place rather than re-rendering: a rebuilt button
+    // would appear already turned, so the caret would never animate, and focus
+    // stays on the same element for free.
+    const groupId = button.dataset.group;
+    const open = overviewView.collapsed.has(groupId);
+    if (open) {
+      overviewView.collapsed.delete(groupId);
+    } else {
+      overviewView.collapsed.add(groupId);
+    }
+    button.setAttribute("aria-expanded", String(open));
+    document.getElementById(button.getAttribute("aria-controls")).hidden = !open;
+    return;
+  }
+
   if (action === "add") {
     state.apartment = null;
     state.matches = [];
@@ -2198,10 +2394,16 @@ function deleteApartment() {
   renderOverview();
   showScreen("overview");
 
-  const apartmentButtons = document.querySelectorAll('.apartment-card [data-action="open-apartment"]');
-  const nextApartment = apartmentButtons[Math.min(deletedPosition, apartmentButtons.length - 1)];
+  // Focus the card that took the deleted one's place. A collapsed section's
+  // cards can't take focus, so fall back to the nearest visible card.
+  const apartmentButtons = Array.from(document.querySelectorAll('.apartment-card [data-action="open-apartment"]'));
+  const visible = (item) => !item.closest(".cards").hidden;
+  const start = Math.min(deletedPosition, apartmentButtons.length - 1);
+  const nextApartment =
+    apartmentButtons.slice(start).find(visible) || apartmentButtons.slice(0, start).reverse().find(visible);
   const emptyAction = document.querySelector('#overview-empty [data-action="add"]');
-  (nextApartment || emptyAction).focus();
+  const heading = document.querySelector("#screen-overview h1");
+  (nextApartment || (state.apartments.length ? heading : emptyAction)).focus();
 }
 
 // Form handling on the verify screen

@@ -30,6 +30,13 @@ class MockMap {
   setPaintProperty(id, property, value) { this.layers.get(id).paint[property] = value; }
   hasImage(name) { return this.images.has(name); }
   addImage(name) { this.images.add(name); }
+  getZoom() { return 13.6; }
+  // Screen position for the badge grouping; a flat scale is enough here.
+  // Like Mapbox, it takes [lng, lat] or { lng, lat }.
+  project(lngLat) {
+    const [lng, lat] = Array.isArray(lngLat) ? lngLat : [lngLat.lng, lngLat.lat];
+    return { x: lng * 1e5, y: lat * 1e5 };
+  }
   getCanvas() { return this.container; }
   resize() {}
   remove() {}
@@ -37,9 +44,15 @@ class MockMap {
 
 class Marker {
   constructor({ element }) { this.element = element; }
-  setLngLat(coordinates) { this.coordinates = coordinates; return this; }
+  // Kept on the element too, so a test can read where a badge was placed.
+  setLngLat(coordinates) {
+    this.coordinates = coordinates;
+    this.element.dataset.lngLat = JSON.stringify(coordinates);
+    return this;
+  }
   addTo(map) { map.container.append(this.element); return this; }
   getElement() { return this.element; }
+  remove() { this.element.remove(); return this; }
 }
 
 class Popup {

@@ -15,7 +15,7 @@ and 16 they read as a mistake.
 | 24px | rent below 560px | `.rent` in the `max-width: 560px` block |
 | 20px | page title, brand, dialog title | `.page-heading h1`, `.brand`, `.dialog-header h2` |
 | 18px | heading inside a panel or detail view | `.empty-overview h2`, `.detail-heading h2` |
-| 16px | anything typed or picked, card title, panel sub-heading | `input`, `select`, `.card-top h2`, `.form-panel h2`, `.date-field`, `.segments button`, `.records-empty h2` |
+| 16px | anything typed or picked, card title, panel sub-heading | `input`, `select`, `.card-top h3`, `.form-panel h2`, `.date-field`, `.segments button`, `.records-empty h2` |
 | 14px | control text, field labels, secondary body | `.button`, `label` / `.field-label` / `.filter-group legend`, `.nav-item`, `.heading-subtitle`, `.housing-type`, `.record-copy strong`, `.date-day`, `.dialog-context` |
 | 13px | dense rows and secondary detail | `.record-copy`, `.match-option`, `.text-button`, `.field-message`, `.toast`, `.source-link`, `.record-detail dl` |
 | 12px | captions, metadata, map sublines | `.sort-label`, `.records-header p`, `.record-row time`, `.data-notice`, `.decision`, `.detail-heading p`, `.map-*` sublines |

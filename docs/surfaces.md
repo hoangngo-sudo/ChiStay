@@ -23,15 +23,16 @@ row never wraps. Every edge is a 1px `--border` line, never a shadow.
 
 ## Chicago Place card
 
-One saved Chicago Place. Lives in `.cards` (two columns, 24px gap, one column
-under 560px). The class name stays `.apartment-card`.
+One saved Chicago Place. Lives in a `.cards` grid inside an overview section
+(see [overview.md](overview.md)): two columns with a 24px gap, one column under
+560px. The class name stays `.apartment-card`.
 
 ```html
 <article class="apartment-card">
   <img class="card-building" alt="" aria-hidden="true" />
   <div class="card-top">
     <div>
-      <h2 data-field="address"></h2>
+      <h3 data-field="address"></h3>
       <p class="rent" data-field="rent"></p>
     </div>
     <span class="housing-type" data-field="housing-type"></span>
@@ -41,7 +42,8 @@ under 560px). The class name stays `.apartment-card`.
 </article>
 ```
 
-- 330px minimum height, 22px padding. The illustration is decorative
+- 330px minimum height, 22px padding. The address is an `h3` under its
+  section's `h2`. The illustration is decorative
   (`alt=""`, `aria-hidden`) and has `pointer-events: none` so it never eats a
   click meant for the cards' actions.
 - The rent is the loudest thing on the card (30px) because it is the number the
